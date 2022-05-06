@@ -25,7 +25,7 @@ function mysum_simd(a)
 end
 function mysum_LV(a)
     s = zero(eltype(a))
-    @avx for i ∈ eachindex(a)
+    @turbo for i ∈ eachindex(a)
         s += a[i]
     end
     s
@@ -39,6 +39,7 @@ end
 Ns = floor.(Int, 10 .^ (1:8))
 Ns = floor.(Int, 10 .^ range(.5, 9, length=20))
 
+figure()
 for f in (sum, mysum_unstable, mysum, mysum_simd, mysum_LV)
     loglog(8Ns, flops_f.(Ns, f), "-x", label="$f")
 end
@@ -50,6 +51,8 @@ loglog(8Ns, peakflops() * ones(length(Ns)), "-k", label="peakflops")
 using STREAMBenchmark
 bw = memory_bandwidth(write_allocate=false)[1] #MB/s
 loglog(8Ns, bw*1e6/8 * ones(length(Ns)), "--k", label="bandwidth")
+xlabel("mem")
+ylabel("FLOPS")
 legend()
 
 # get from sudo dmidecode -t cache
