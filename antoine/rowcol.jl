@@ -28,6 +28,10 @@ end
 
 Ns = floor.(Int, 10 .^ range(.5, 4, length=10))
 
+figure()
 for f in (sum_row, sum_col)
     loglog(Ns, flops_f.(Ns, f), "-x", label="$f")
 end
+xlabel("N")
+ylabel("flops")
+legend()
