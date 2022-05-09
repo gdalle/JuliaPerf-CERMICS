@@ -1,5 +1,5 @@
 ### A Pluto.jl notebook ###
-# v0.18.4
+# v0.19.3
 
 using Markdown
 using InteractiveUtils
@@ -8,10 +8,9 @@ using InteractiveUtils
 begin
 	using BenchmarkTools
 	using JET
-	using PlutoProfile
 	using PlutoUI
 	using Profile
-	using ProfileSVG
+	using ProfileCanvas
 	using ProgressLogging
 end
 
@@ -41,11 +40,7 @@ Here we will compare several ways to compute sequences ``(x_n)`` given by initia
 # ╔═╡ 781a7cdd-d36e-40b4-9de1-f832cba41377
 function seq_rec(w, y, n)
 	d = length(w)
-	if n <= d
-		return y[n]
-	else
-		return sum([w[i] * seq_rec(w, y, n-i) for i = 1:d])
-	end
+	return n <= d ? y[n] : sum([w[i] * seq_rec(w, y, n-i) for i = 1:d])
 end
 
 # ╔═╡ 75010618-78e8-4490-83bb-158c781afa30
@@ -53,11 +48,7 @@ function seq_loop1(w, y, n)
 	d = length(w)
 	x = similar(y, n)
 	for k = 1:n
-		if k <= d
-			x[k] = y[k]
-		else
-			x[k] = sum([w[i] * x[k-i] for i = 1:d])
-		end
+		x[k] = k <= d ? y[k] : sum([w[i] * x[k-i] for i = 1:d])
 	end
 	return x[n]
 end
@@ -67,11 +58,7 @@ function seq_loop2(w, y, n)
 	d = length(w)
 	x = similar(y, n)
 	for k = 1:n
-		if k <= d
-			x[k] = y[k]
-		else
-			x[k] = sum(w[i] * x[k-i] for i = 1:d)
-		end
+		x[k] = k <= d ? y[k] : sum(w[i] * x[k-i] for i = 1:d)
 	end
 	return x[n]
 end
@@ -84,15 +71,29 @@ wfib, yfib = [1, 1], [1, 1]
 
 # ╔═╡ 3d98e7db-c643-4500-987d-4a225e55b2a5
 md"""
-### Tracking loops
+## Tracking loops
 
 In long-running code, the best way to track loops is not a periodic `println(i)`. There are packages designed for this purpose, such as [ProgressMeter.jl](https://github.com/timholy/ProgressMeter.jl).
-However, since the REPL doesn't work well in Pluto notebooks, use the `@progress` macro of [ProgressLogging.jl](https://github.com/JuliaLogging/ProgressLogging.jl) instead.
+However, since the REPL doesn't work well in Pluto notebooks, we can use the `@progress` macro of [ProgressLogging.jl](https://github.com/JuliaLogging/ProgressLogging.jl) instead.
 """
 
 # ╔═╡ b4f2a99e-de45-49d2-be86-9f2d03357462
-@progress for i in 1:50
-	sleep(0.1)
+@progress for i in 1:10
+	sleep(0.2)
+end
+
+# ╔═╡ 068b3e45-5105-48aa-a547-536470f6abda
+md"""
+Julia also has a built-in [logging system](https://docs.julialang.org/en/v1/stdlib/Logging/) which Pluto natively understands.
+"""
+
+# ╔═╡ 7a75c990-46b4-484e-acc4-65e34f41a9f2
+for i in 1:10
+	if i % 2 == 0
+		@info "Even integer" i
+	else
+		@warn "Odd integer" i
+	end
 end
 
 # ╔═╡ f7b1b44f-2aa6-4c5c-97a2-ac7037fb48ce
@@ -115,13 +116,13 @@ f1(n) = inv(rand(n, n))
 @allocated f1(100)
 
 # ╔═╡ 4da8a7ca-3cea-4629-a66d-44f3b907af09
-@time f1(100)
+@time f1(100);
 
 # ╔═╡ c0a7c1fe-457f-4e52-b0ea-2821e40817ea
 md"""
-Since we have small functions here, we would get a more accurate evaluation by running them repeatedly. This is what package [BenchmarkTools.jl](https://github.com/JuliaCI/BenchmarkTools.jl) does with the following macros:
+When dealing with small functions here, we get a more accurate evaluation by running them repeatedly. This is what [BenchmarkTools.jl](https://github.com/JuliaCI/BenchmarkTools.jl) does with the following macros:
 - `@belapsed` for time
-- `@ballocated` for space
+- `@ballocated` for memory
 - `@benchmark` for both
 In the following cells, we run the function once to ensure it is precompiled before starting the benchmark. We also [interpolate](https://juliaci.github.io/BenchmarkTools.jl/stable/manual/#Interpolating-values-into-benchmark-expressions) the external (global) variables with a dollar sign to make sure they don't hurt performance.
 """
@@ -155,24 +156,26 @@ As with benchmarking, I run the function once to precompile it before profiling 
 # ╔═╡ 4df3ba6b-49d4-4d65-8839-bb8976ab8b8c
 begin
 	seq_loop1(w, y, 1)
-	@profile seq_loop1(w, y, 10^7)
+	@profile seq_loop1(w, y, 10^5)
 	Profile.print(sortedby=:count, format=:tree)
 end
 
 # ╔═╡ 46422b77-ae0a-4174-9c73-4f6399b63b5d
 md"""
-As you can see, this is not very pleasant to work with. Profiling results are much easier to analyze with the help of a flame graph. To generate one, we will use [ProfileSVG.jl](https://github.com/kimikage/ProfileSVG.jl) through a Pluto-specific adaptation, [PlutoProfile.jl](https://github.com/gdalle/PlutoProfile.jl).
+As you can see, this is not very pleasant to work with. Profiling results are much easier to analyze with the help of a flame graph.
+To generate one, we will use the `@profview` macro from [ProfileCanvas.jl](https://github.com/pfitzseb/ProfileCanvas.jl) (the same macro is available natively in VSCode).
 """
 
 # ╔═╡ 36d679d0-999d-404a-91f6-b678ba1344d3
-seq_loop1(w, y, 1); @plutoprofview seq_loop1(w, y, 10^7)
+seq_loop1(w, y, 1); ProfileCanvas.@profview seq_loop1(w, y, 10^7)
 
 # ╔═╡ 7c57439e-77c6-4e3f-bace-d7ebc428cac9
-seq_loop2(w, y, 1); @plutoprofview seq_loop2(w, y, 10^7)
+seq_loop2(w, y, 1); ProfileCanvas.@profview seq_loop2(w, y, 10^7)
 
 # ╔═╡ 091d3e08-9ae3-4b33-be00-de62a5998c80
 md"""
 Each layer of the flame graph represents one level of the call stack (the nested sequence of functions that are called by your code). The width of a tile is proportional to its execution time.
+The first few layers are Julia / Pluto boilerplate, and we need to scroll down to reach user-defined functions.
 
 We can see that `seq_loop1` spends most of the time within the `collect` function of the `array.jl` module, while `seq_loop2` doesn't call it at all. This function is used to create new arrays and fill them, which is the root of `seq_loop1`'s inefficiency.
 Indeed, memory allocations are expensive, and here we can avoid them: in line 8 of `seq_loop1`, it is not necessary to create a new vector in order to compute the sum.
@@ -188,16 +191,14 @@ function seq_pow(w, y, n)
 	error("Not implemented yet")
 end
 
-# ╔═╡ 65bc2630-285e-48a1-89f1-ff70ae8c4d9e
-
-
 # ╔═╡ 0fb6ed33-601c-4392-b7d9-32230c979d39
 md"""
 # Improving code performance
 
-Once we know which parts of our code take the most time, we can try to optimize them. The primary source for this section is the Julia language manual, more specifically its [performance tips](https://docs.julialang.org/en/v1/manual/performance-tips/), but I also used some other inspirations:
-- [7 Julia gotchas and how to handle them](https://www.stochasticlifestyle.com/7-julia-gotchas-handle/)
+Once we know which parts of our code take the most time, we can try to optimize them. The primary source for this section is the Julia language manual, more specifically its [performance tips](https://docs.julialang.org/en/v1/manual/performance-tips/), but I also used some other inspirations (by increasing order of complexity):
 - [Julia for Data Science - performance tips](https://www.juliafordatascience.com/performance-tips/).
+- [7 Julia gotchas and how to handle them](https://www.stochasticlifestyle.com/7-julia-gotchas-handle/)
+- [What scientists must know about hardware to write fast code](https://viralinstruction.com/posts/hardware/)
 """
 
 # ╔═╡ a6e9da76-1ff0-4b54-9b55-4856ca32b251
@@ -210,7 +211,7 @@ md"""
 
 # ╔═╡ fa483fea-bf9f-4764-8d4f-c6d33e3336fb
 md"""
-## Memory allocations
+### Memory allocations
 
 - Prefer in-place operations
 - Pre-allocate output memory
@@ -219,13 +220,18 @@ md"""
 
 # ╔═╡ d3c1a86c-8c8f-4ad6-ac3c-2ba0f838d139
 md"""
-## Typing
+### Typing
 
 Julia is fast when it can infer the type of each variable at compiletime (i.e. before runtime): we must help type inference when we can:
 - Avoid using abstract types in strategic places: container initializations, field declarations
 - Write type-stable code (make sure variable types do not change)
 - Use `@code_warntype` or (better yet) [JET.jl](https://github.com/aviatesk/JET.jl) to debug type instabilities
 
+"""
+
+# ╔═╡ b186543b-aae1-4c96-a93d-8507a2a54805
+md"""
+## Examples
 """
 
 # ╔═╡ 9d1951b4-2bf3-4dd3-9ee2-ec8bb6b953f3
@@ -368,10 +374,11 @@ This time, JET.jl would not have caught it, probably since it considers a union 
 md"""
 # Generic programming
 
-The key feature of Julia is multiple dispatch, which allows the right method to be chosen based on argument types. This is what allows multiple packages to work together seamlessly, but to do that we must remain as generic as possible:
+The key feature of Julia is multiple dispatch, which allows the right method to be chosen based on argument types. This is what makes it possible for multiple packages to work together seamlessly, but to achieve that we must remain as generic as possible:
 - Do not overspecify input types
 - Write smaller dispatchable functions instead of `if - else` blocks
-See this [blog post](https://www.stochasticlifestyle.com/type-dispatch-design-post-object-oriented-programming-julia/) for more details.
+
+To go further, see [Type-Dispatch Design: Post Object-Oriented Programming for Julia](https://www.stochasticlifestyle.com/type-dispatch-design-post-object-oriented-programming-julia/).
 """
 
 # ╔═╡ 00000000-0000-0000-0000-000000000001
@@ -379,18 +386,16 @@ PLUTO_PROJECT_TOML_CONTENTS = """
 [deps]
 BenchmarkTools = "6e4b80f9-dd63-53aa-95a3-0cdb28fa8baf"
 JET = "c3a54625-cd67-489e-a8e7-0a5a0ff4e31b"
-PlutoProfile = "ee419aa8-929d-45cd-acf6-76bd043cd7ba"
 PlutoUI = "7f904dfe-b85e-4ff6-b463-dae2292396a8"
 Profile = "9abbd945-dff8-562f-b5e8-e1ebf5ef1b79"
-ProfileSVG = "132c30aa-f267-4189-9183-c8a63c7e05e6"
+ProfileCanvas = "efd6af41-a80b-495e-886c-e51b0c7d77a3"
 ProgressLogging = "33c8b6b6-d38a-422a-b730-caa89a2f386c"
 
 [compat]
 BenchmarkTools = "~1.3.1"
 JET = "~0.5.10"
-PlutoProfile = "~0.2.0"
 PlutoUI = "~0.7.37"
-ProfileSVG = "~0.2.1"
+ProfileCanvas = "~0.1.0"
 ProgressLogging = "~0.1.4"
 """
 
@@ -449,22 +454,6 @@ version = "0.12.8"
 deps = ["Artifacts", "Libdl"]
 uuid = "e66e0078-7015-5450-92f7-15fbd957f2ae"
 
-[[deps.Configurations]]
-deps = ["ExproniconLite", "OrderedCollections", "TOML"]
-git-tree-sha1 = "ab9b7c51e8acdd20c769bccde050b5615921c533"
-uuid = "5218b696-f38b-4ac9-8b61-a12ec717816d"
-version = "0.17.3"
-
-[[deps.DataAPI]]
-git-tree-sha1 = "cc70b17275652eb47bc9e5f81635981f13cea5c8"
-uuid = "9a962f9c-6df0-11e9-0e5d-c546b8b5ee8a"
-version = "1.9.0"
-
-[[deps.DataValueInterfaces]]
-git-tree-sha1 = "bfc1187b79289637fa0ef6d4436ebdfe6905cbd6"
-uuid = "e2d170a0-9d28-54be-80f0-106bbe20a464"
-version = "1.0.0"
-
 [[deps.Dates]]
 deps = ["Printf"]
 uuid = "ade2ca70-3891-5945-98fb-dc099432e06a"
@@ -476,11 +465,6 @@ uuid = "8ba89e20-285c-5b6f-9357-94700520ee1b"
 [[deps.Downloads]]
 deps = ["ArgTools", "LibCURL", "NetworkOptions"]
 uuid = "f43a241f-c20a-4ad4-852c-f6b1247861c6"
-
-[[deps.ExproniconLite]]
-git-tree-sha1 = "8b08cc88844e4d01db5a2405a08e9178e19e479e"
-uuid = "55351af7-c7e9-48d6-89ff-24e801d99491"
-version = "0.6.13"
 
 [[deps.FileIO]]
 deps = ["Pkg", "Requires", "UUIDs"]
@@ -502,18 +486,6 @@ deps = ["AbstractTrees", "Colors", "FileIO", "FixedPointNumbers", "IndirectArray
 git-tree-sha1 = "d9eee53657f6a13ee51120337f98684c9c702264"
 uuid = "08572546-2f56-4bcf-ba4e-bab62c3a3f89"
 version = "0.2.10"
-
-[[deps.FuzzyCompletions]]
-deps = ["REPL"]
-git-tree-sha1 = "efd6c064e15e92fcce436977c825d2117bf8ce76"
-uuid = "fb4132e2-a121-4a70-b8a1-d5b831dcdcc2"
-version = "0.5.0"
-
-[[deps.HTTP]]
-deps = ["Base64", "Dates", "IniFile", "Logging", "MbedTLS", "NetworkOptions", "Sockets", "URIs"]
-git-tree-sha1 = "0fa77022fe4b511826b39c894c90daf5fce3334a"
-uuid = "cd3eb016-35fb-5094-929b-558a96fad6f3"
-version = "0.9.17"
 
 [[deps.Hyperscript]]
 deps = ["Test"]
@@ -537,19 +509,9 @@ git-tree-sha1 = "012e604e1c7458645cb8b436f8fba789a51b257f"
 uuid = "9b13fd28-a010-5f03-acff-a1bbcff69959"
 version = "1.0.0"
 
-[[deps.IniFile]]
-git-tree-sha1 = "f550e6e32074c939295eb5ea6de31849ac2c9625"
-uuid = "83e8ac13-25f8-5344-8a64-a9f2b223428f"
-version = "0.5.1"
-
 [[deps.InteractiveUtils]]
 deps = ["Markdown"]
 uuid = "b77e0a4c-d291-57a0-90e8-8db25a27a240"
-
-[[deps.IteratorInterfaceExtensions]]
-git-tree-sha1 = "a3f24677c21f5bbe9d2a714f95dcd58337fb2856"
-uuid = "82899510-4779-5014-852e-03e436cf321d"
-version = "1.0.0"
 
 [[deps.JET]]
 deps = ["InteractiveUtils", "JuliaInterpreter", "LoweredCodeUtils", "MacroTools", "Pkg", "Revise", "Test"]
@@ -617,12 +579,6 @@ version = "0.5.9"
 deps = ["Base64"]
 uuid = "d6f4376e-aef5-505a-96c1-9c027394607a"
 
-[[deps.MbedTLS]]
-deps = ["Dates", "MbedTLS_jll", "Random", "Sockets"]
-git-tree-sha1 = "1c38e51c3d08ef2278062ebceade0e46cefc96fe"
-uuid = "739be429-bea8-5141-9913-cc70e7f3736d"
-version = "1.0.3"
-
 [[deps.MbedTLS_jll]]
 deps = ["Artifacts", "Libdl"]
 uuid = "c8ffd9c3-330d-5841-b78e-0817d7145fa1"
@@ -632,12 +588,6 @@ uuid = "a63ad114-7e13-5084-954f-fe012c677804"
 
 [[deps.MozillaCACerts_jll]]
 uuid = "14a3606d-f60d-562e-9121-12d972cd8159"
-
-[[deps.MsgPack]]
-deps = ["Serialization"]
-git-tree-sha1 = "a8cbf066b54d793b9a48c5daa5d586cf2b5bd43d"
-uuid = "99f44e22-a591-53d1-9472-aa23ef4bd671"
-version = "1.1.0"
 
 [[deps.NetworkOptions]]
 uuid = "ca575930-c2e3-43a9-ace4-1e988b2c1908"
@@ -661,18 +611,6 @@ version = "2.2.3"
 deps = ["Artifacts", "Dates", "Downloads", "LibGit2", "Libdl", "Logging", "Markdown", "Printf", "REPL", "Random", "SHA", "Serialization", "TOML", "Tar", "UUIDs", "p7zip_jll"]
 uuid = "44cfe95a-1eb2-52ea-b672-e2afdf69b78f"
 
-[[deps.Pluto]]
-deps = ["Base64", "Configurations", "Dates", "Distributed", "FileWatching", "FuzzyCompletions", "HTTP", "InteractiveUtils", "Logging", "Markdown", "MsgPack", "Pkg", "REPL", "RelocatableFolders", "Sockets", "Tables", "UUIDs"]
-git-tree-sha1 = "1302c9385c9e5b47f9872688015927f7929371cb"
-uuid = "c3e4b0f8-55cb-11ea-2926-15256bba5781"
-version = "0.18.4"
-
-[[deps.PlutoProfile]]
-deps = ["AbstractTrees", "FlameGraphs", "Pluto", "Profile", "ProfileSVG"]
-git-tree-sha1 = "2c4154f5393e169adb5817b58929ef9bdaea46e5"
-uuid = "ee419aa8-929d-45cd-acf6-76bd043cd7ba"
-version = "0.2.0"
-
 [[deps.PlutoUI]]
 deps = ["AbstractPlutoDingetjes", "Base64", "ColorTypes", "Dates", "Hyperscript", "HypertextLiteral", "IOCapture", "InteractiveUtils", "JSON", "Logging", "Markdown", "Random", "Reexport", "UUIDs"]
 git-tree-sha1 = "bf0a1121af131d9974241ba53f601211e9303a9e"
@@ -687,11 +625,11 @@ uuid = "de0858da-6303-5e67-8744-51eddeeeb8d7"
 deps = ["Printf"]
 uuid = "9abbd945-dff8-562f-b5e8-e1ebf5ef1b79"
 
-[[deps.ProfileSVG]]
-deps = ["Colors", "FlameGraphs", "Profile", "UUIDs"]
-git-tree-sha1 = "e4df82a5dadc26736f106f8d7fc97c42cc6c91ae"
-uuid = "132c30aa-f267-4189-9183-c8a63c7e05e6"
-version = "0.2.1"
+[[deps.ProfileCanvas]]
+deps = ["FlameGraphs", "JSON", "Pkg", "Profile", "REPL"]
+git-tree-sha1 = "41fd9086187b8643feda56b996eef7a3cc7f4699"
+uuid = "efd6af41-a80b-495e-886c-e51b0c7d77a3"
+version = "0.1.0"
 
 [[deps.ProgressLogging]]
 deps = ["Logging", "SHA", "UUIDs"]
@@ -712,12 +650,6 @@ git-tree-sha1 = "45e428421666073eab6f2da5c9d310d99bb12f9b"
 uuid = "189a3867-3050-52da-a836-e630ba90ab69"
 version = "1.2.2"
 
-[[deps.RelocatableFolders]]
-deps = ["SHA", "Scratch"]
-git-tree-sha1 = "307761d71804208c0c62abdbd0ea6822aa5bbefd"
-uuid = "05181044-ff0b-4ac5-8273-598c1e38db00"
-version = "0.2.0"
-
 [[deps.Requires]]
 deps = ["UUIDs"]
 git-tree-sha1 = "838a3a4188e2ded87a4f9f184b4b0d78a1e91cb7"
@@ -732,12 +664,6 @@ version = "3.3.3"
 
 [[deps.SHA]]
 uuid = "ea8e919c-243c-51af-8825-aaa63cd721ce"
-
-[[deps.Scratch]]
-deps = ["Dates"]
-git-tree-sha1 = "0b4b7f1393cff97c33891da2a0bf69c6ed241fda"
-uuid = "6c6a2e73-6563-6170-7368-637461726353"
-version = "1.1.0"
 
 [[deps.Serialization]]
 uuid = "9e88b42a-f829-5b0c-bbe9-9e923198166b"
@@ -757,18 +683,6 @@ uuid = "10745b16-79ce-11e8-11f9-7d13ad32a3b2"
 deps = ["Dates"]
 uuid = "fa267f1f-6049-4f14-aa54-33bafae1ed76"
 
-[[deps.TableTraits]]
-deps = ["IteratorInterfaceExtensions"]
-git-tree-sha1 = "c06b2f539df1c6efa794486abfb6ed2022561a39"
-uuid = "3783bdb8-4a98-5b6b-af9a-565f29a5fe9c"
-version = "1.0.1"
-
-[[deps.Tables]]
-deps = ["DataAPI", "DataValueInterfaces", "IteratorInterfaceExtensions", "LinearAlgebra", "OrderedCollections", "TableTraits", "Test"]
-git-tree-sha1 = "5ce79ce186cc678bbb5c5681ca3379d1ddae11a1"
-uuid = "bd369af6-aec1-5ad0-b16a-f7cc5008161c"
-version = "1.7.0"
-
 [[deps.Tar]]
 deps = ["ArgTools", "SHA"]
 uuid = "a4e569a6-e804-4fa4-b0f3-eef7a1d5b13e"
@@ -776,11 +690,6 @@ uuid = "a4e569a6-e804-4fa4-b0f3-eef7a1d5b13e"
 [[deps.Test]]
 deps = ["InteractiveUtils", "Logging", "Random", "Serialization"]
 uuid = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
-
-[[deps.URIs]]
-git-tree-sha1 = "97bbe755a53fe859669cd907f2d96aee8d2c1355"
-uuid = "5c2747f8-b7ea-4ff2-ba2e-563bfd36b1d4"
-version = "1.3.0"
 
 [[deps.UUIDs]]
 deps = ["Random", "SHA"]
@@ -807,9 +716,9 @@ uuid = "3f19e933-33d8-53b3-aaab-bd5110c3b7a0"
 """
 
 # ╔═╡ Cell order:
-# ╟─e1852c8d-4028-409e-8e1a-8253bbd6e6a5
 # ╠═bca07932-eb86-40e3-9b47-aace0efda5d0
 # ╠═5de2a556-f3af-4a64-a5c6-32d30f758be3
+# ╟─e1852c8d-4028-409e-8e1a-8253bbd6e6a5
 # ╟─9331fad2-f29e-11eb-0349-477bd2e7e412
 # ╟─62eeeb90-8bdf-4a70-bcef-ab31136c264c
 # ╠═781a7cdd-d36e-40b4-9de1-f832cba41377
@@ -819,6 +728,8 @@ uuid = "3f19e933-33d8-53b3-aaab-bd5110c3b7a0"
 # ╠═2b7a5cdb-8154-4009-ac63-57749b6cc5d3
 # ╟─3d98e7db-c643-4500-987d-4a225e55b2a5
 # ╠═b4f2a99e-de45-49d2-be86-9f2d03357462
+# ╟─068b3e45-5105-48aa-a547-536470f6abda
+# ╠═7a75c990-46b4-484e-acc4-65e34f41a9f2
 # ╟─f7b1b44f-2aa6-4c5c-97a2-ac7037fb48ce
 # ╠═299e7754-b4e9-4c53-83d6-6f30e130ed01
 # ╠═1fb43343-083b-4b1a-b622-d88c9aa0808c
@@ -838,11 +749,11 @@ uuid = "3f19e933-33d8-53b3-aaab-bd5110c3b7a0"
 # ╟─091d3e08-9ae3-4b33-be00-de62a5998c80
 # ╟─c43e1688-645e-4b67-9bba-b249f2277374
 # ╠═9926023d-66d0-4f47-b652-9a144b3a45fb
-# ╠═65bc2630-285e-48a1-89f1-ff70ae8c4d9e
 # ╟─0fb6ed33-601c-4392-b7d9-32230c979d39
 # ╟─a6e9da76-1ff0-4b54-9b55-4856ca32b251
 # ╟─fa483fea-bf9f-4764-8d4f-c6d33e3336fb
 # ╟─d3c1a86c-8c8f-4ad6-ac3c-2ba0f838d139
+# ╟─b186543b-aae1-4c96-a93d-8507a2a54805
 # ╟─9d1951b4-2bf3-4dd3-9ee2-ec8bb6b953f3
 # ╟─1067868e-2ca8-463f-bc55-c444aaf3b37c
 # ╠═dacdb662-f46d-4032-a8b8-cdfbaf5317fc
