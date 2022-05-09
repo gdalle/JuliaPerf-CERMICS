@@ -1,0 +1,18 @@
+structure d'un CPU: registres, RAM, disque
+
+test.c -O0 -o test
+objdump test
+regarder "loop" avec O0, O1, O3
+
+sum. À votre avis, à quoi va ressembler le plot ?
+discuter caches, code_native
+
+rowcol.jl
+
+matmul.jl
+
+roofline model
+
+multithreading (@threads, floops) vs distributed (MPI)
+multithreading: sum vs sum(expensive_function)
+MPI: example from DFTK
