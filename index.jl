@@ -1,13 +1,14 @@
 ### A Pluto.jl notebook ###
-# v0.19.4
+# v0.18.4
 
 using Markdown
 using InteractiveUtils
 
-# ╔═╡ bca07932-eb86-40e3-9b47-aace0efda5d0
+# ╔═╡ f5231f65-da94-4ed3-af65-857edb42ee08
 begin
 	using BenchmarkTools
 	using JET
+	using PlutoProfile
 	using PlutoUI
 	using Profile
 	using ProfileCanvas
@@ -27,50 +28,8 @@ VERSION
 md"""
 # Monitoring code performance
 
-Before trying to improve the efficiency of our code, it is essential to analyze it and see where the "bottlenecks" are.
+Before trying to improve the efficiency of our code, it is essential to analyze it and locate potential improvements.
 """
-
-# ╔═╡ 62eeeb90-8bdf-4a70-bcef-ab31136c264c
-md"""
-## Running example: linear recursions
-
-Here we will compare several ways to compute sequences ``(x_n)`` given by initial values ``x_i = y_i`` for ``i \in [d]`` and the following recursive definition:
-```math
-    x_n = w_1 x_{n-1} + ... + w_d x_{n-d}
-```
-"""
-
-# ╔═╡ 781a7cdd-d36e-40b4-9de1-f832cba41377
-function seq_rec(w, y, n)
-	d = length(w)
-	return n <= d ? y[n] : sum([w[i] * seq_rec(w, y, n-i) for i = 1:d])
-end
-
-# ╔═╡ 75010618-78e8-4490-83bb-158c781afa30
-function seq_loop1(w, y, n)
-	d = length(w)
-	x = similar(y, n)
-	for k = 1:n
-		x[k] = k <= d ? y[k] : sum([w[i] * x[k-i] for i = 1:d])
-	end
-	return x[n]
-end
-
-# ╔═╡ 8fd4bbea-6c88-4302-b8b6-128aff82db48
-function seq_loop2(w, y, n)
-	d = length(w)
-	x = similar(y, n)
-	for k = 1:n
-		x[k] = k <= d ? y[k] : sum(w[i] * x[k-i] for i = 1:d)
-	end
-	return x[n]
-end
-
-# ╔═╡ f9b8eed6-c289-4b41-828d-fd469fd3a321
-wfib, yfib = [1, 1], [1, 1]
-
-# ╔═╡ 2b7a5cdb-8154-4009-ac63-57749b6cc5d3
-55 == seq_rec(wfib, yfib, 10) == seq_loop1(wfib, yfib, 10) == seq_loop2(wfib, yfib, 10)
 
 # ╔═╡ 3d98e7db-c643-4500-987d-4a225e55b2a5
 md"""
@@ -109,90 +68,49 @@ To evaluate the efficiency of a function, we need to know how long it takes and 
 - `@time` prints both (in the REPL!) and returns the function result
 """
 
-# ╔═╡ 299e7754-b4e9-4c53-83d6-6f30e130ed01
-f1(n) = inv(rand(n, n))
-
 # ╔═╡ 1fb43343-083b-4b1a-b622-d88c9aa0808c
-@elapsed f1(100)
+@elapsed exp(rand(100, 100))
 
 # ╔═╡ a28f7911-3dbb-45fb-a82d-2834d3c8502c
-@allocated f1(100)
+@allocated exp(rand(100, 100))
 
 # ╔═╡ 4da8a7ca-3cea-4629-a66d-44f3b907af09
-@time f1(100);
+@time exp(rand(100, 100));
 
 # ╔═╡ c0a7c1fe-457f-4e52-b0ea-2821e40817ea
 md"""
-When dealing with small functions here, we get a more accurate evaluation by running them repeatedly. This is what [BenchmarkTools.jl](https://github.com/JuliaCI/BenchmarkTools.jl) does with the following macros:
+When dealing with short-running functions, we get a more accurate evaluation by running them repeatedly. This is what [BenchmarkTools.jl](https://github.com/JuliaCI/BenchmarkTools.jl) does with the following macros:
 - `@belapsed` for time
 - `@ballocated` for memory
 - `@benchmark` for both
-In the following cells, we run the function once to ensure it is precompiled before starting the benchmark. We also [interpolate](https://juliaci.github.io/BenchmarkTools.jl/stable/manual/#Interpolating-values-into-benchmark-expressions) the external (global) variables with a dollar sign to make sure they don't hurt performance.
+When using them, it is important to [interpolate](https://juliaci.github.io/BenchmarkTools.jl/stable/manual/#Interpolating-values-into-benchmark-expressions) the external (global) variables with a dollar sign to make sure they don't hurt performance.
 """
-
-# ╔═╡ 64189969-f5b2-49cf-a2e9-d837e76ed79d
-w, y = randn(5), randn(5)
 
 # ╔═╡ 834f6172-15bc-4e7d-ae22-e18ef2e8e22b
-seq_rec(w, y, 1); @benchmark seq_rec($w, $y, 20)
-
-# ╔═╡ a0f3b8a4-a0c6-43b4-b55c-641b14d4f05a
-seq_loop1(w, y, 1); @benchmark seq_loop1($w, $y, 1000)
-
-# ╔═╡ 63a87cc9-e078-4390-bfb9-eab65e251a30
-seq_loop2(w, y, 1); @benchmark seq_loop2($w, $y, 1000)
-
-# ╔═╡ 1d0af35c-0cee-4f70-9346-014ab294a614
-md"""
-Unsurprisingly, `seq_rec` is much slower than the loop-based functions, because the same values are computed multiple times in the recursion tree. The difference in performance between `seq_loop1` and `sec_loop2` is more subtle, and we investigate it next.
-"""
+@benchmark exp(rand(100, 100))
 
 # ╔═╡ 94c78148-c651-4a59-9e62-5c7e9576d1e8
 md"""
 ## Profiling
 
-Sometimes it is not enough to measure the time taken by the whole program: you have to dig in and separate the influence of each subfunction. This is what [profiling](https://docs.julialang.org/en/v1/manual/profile/) is about. What the basic `@profile` macro does is run your function and ping it periodically to figure out in which subroutine it currently is. The ping count in each nested call gives a good approximation of the computation time, and can help you detect bottlenecks. 
-
-As with benchmarking, I run the function once to precompile it before profiling it, otherwise the compilation time might bias the analysis.
+Often, benchmarking is not enough, and we need to dig deep into the code to figure out what takes time and what.
+This is what [profiling](https://docs.julialang.org/en/v1/manual/profile/) is about: all it does is run your function and ping it periodically to figure out in which subroutine it is. The ping count for each nested call gives a good approximation of the time spent in it, and can help you detect bottlenecks.
 """
 
-# ╔═╡ 4df3ba6b-49d4-4d65-8839-bb8976ab8b8c
-begin
-	seq_loop1(w, y, 1)
-	@profile seq_loop1(w, y, 10^5)
-	Profile.print(sortedby=:count, format=:tree)
-end
-
-# ╔═╡ 46422b77-ae0a-4174-9c73-4f6399b63b5d
+# ╔═╡ c42e3aa8-48c7-4bb1-bb35-2301476e085b
 md"""
-As you can see, this is not very pleasant to work with. Profiling results are much easier to analyze with the help of a flame graph.
-To generate one, we will use the `@profview` macro from [ProfileCanvas.jl](https://github.com/pfitzseb/ProfileCanvas.jl) (the same macro is available natively in VSCode).
-"""
-
-# ╔═╡ 36d679d0-999d-404a-91f6-b678ba1344d3
-seq_loop1(w, y, 1); ProfileCanvas.@profview seq_loop1(w, y, 10^7)
-
-# ╔═╡ 7c57439e-77c6-4e3f-bace-d7ebc428cac9
-seq_loop2(w, y, 1); ProfileCanvas.@profview seq_loop2(w, y, 10^7)
-
-# ╔═╡ 091d3e08-9ae3-4b33-be00-de62a5998c80
-md"""
+Profiling results are easier to analyze with the help of a flame graph.
+To generate one, we will use a Pluto adaptation of the `@profview` macro (which is [available in VSCode](https://www.julia-vscode.org/docs/stable/userguide/profiler/)).
 Each layer of the flame graph represents one level of the call stack (the nested sequence of functions that are called by your code). The width of a tile is proportional to its execution time.
-The first few layers are Julia / Pluto boilerplate, and we need to scroll down to reach user-defined functions.
-
-We can see that `seq_loop1` spends most of the time within the `collect` function of the `array.jl` module, while `seq_loop2` doesn't call it at all. This function is used to create new arrays and fill them, which is the root of `seq_loop1`'s inefficiency.
-Indeed, memory allocations are expensive, and here we can avoid them: in line 8 of `seq_loop1`, it is not necessary to create a new vector in order to compute the sum.
+The first few layers are usually boilerplate code, and we need to scroll down to reach user-defined functions.
+Special attention should be paid to the colors:
+- blue means everything is fine
+- yellow means "garbage collection" (usually a sign of excessive allocations)
+- red means "runtime dispatch" (usually a sign of bad typing, we will come back to it).
 """
 
-# ╔═╡ c43e1688-645e-4b67-9bba-b249f2277374
-md"""
-Maybe there is an even more efficient implementation, for instance one that uses matrix powers? Try to code it and compare it with the previous ones.
-"""
-
-# ╔═╡ 9926023d-66d0-4f47-b652-9a144b3a45fb
-function seq_pow(w, y, n)
-	error("Not implemented yet")
-end
+# ╔═╡ c44f3dc9-ff19-4ba4-9388-73cfaf23f8e8
+@plutoprofview exp(rand(500, 500))
 
 # ╔═╡ 0fb6ed33-601c-4392-b7d9-32230c979d39
 md"""
@@ -218,7 +136,7 @@ md"""
 
 - Prefer in-place operations
 - Pre-allocate output memory
-- Use views (`@view a[:, 1]`) instead of array slices when you don't need to modify their values
+- Use views instead of slices (`view(A, :, 1)` instead of `A[:, 1]`) when you need to access sub-arrays without copying their values
 """
 
 # ╔═╡ d3c1a86c-8c8f-4ad6-ac3c-2ba0f838d139
@@ -232,9 +150,159 @@ Julia is fast when it can infer the type of each variable at compiletime (i.e. b
 
 """
 
+# ╔═╡ 43bad028-9d16-426f-9cdb-a37b1ee1a623
+md"""
+## Iterative workflow
+
+We now illustrate the typical workflow of performance analysis and improvement.
+Our goal will be to write function that computes the product $C = AB$ of two matrices $A \in \mathbb{R}^{m \times n}$ and $B \in \mathbb{R}^{n \times p}$, without using linear algebra routines.
+Starting from a simple implementation, we will enhance it step by step until we are satisfied with its performance.
+"""
+
+# ╔═╡ 857509a7-f07a-4bf0-9383-207984b95faa
+A, B = rand(200, 100), rand(100, 300);
+
+# ╔═╡ 7386749b-b2ab-48a7-a1d2-46e7f31e72e3
+md"""
+### Version 1
+
+Our first attempt aims at the simplest possible correct code, following the famous mantra
+> Make it work, make it right, make it fast.
+"""
+
+# ╔═╡ 6cd86e7a-9f82-4da1-a8f0-4ed2c1068ab9
+begin
+	function matmul1(A, B)
+		m, p = size(A, 1), size(B, 2)
+		C = Matrix{Float64}(undef, m, p)
+		for i = 1:m, j = 1:p
+			C[i, j] = sum(A[i, :] .* B[:, j])
+		end
+		return C
+	end
+	
+	@assert matmul1(A, B) ≈ A * B
+end;
+
+# ╔═╡ 382517ac-c4f5-45f1-bfe6-120e06c97b1c
+md"""
+There are two reasons we test our function right after defining it:
+1. to ensure correctness
+2. to get the compilation time of the first run out of the way, so it does not bias our analysis.
+"""
+
+# ╔═╡ 5d10a00b-bfa9-49c7-9f4b-503351fa2842
+@benchmark matmul1($A, $B)
+
+# ╔═╡ 38cc6383-c7d8-46b4-8531-251bd196d960
+md"""
+Is that a good performance? Can we do better? Hard to tell from the benchmark alone, which is why we need profiling.
+"""
+
+# ╔═╡ 62163e17-4265-4c97-95bb-29d608e80b07
+@plutoprofview matmul1(A, B)
+
+# ╔═╡ 9d8b7e25-c9c6-4aba-a33c-66fd18d804c0
+md"""
+Scrolling down the flame graph, we see that that `matmul1` spends a lot of time in the `Array` function, which triggers garbage collection.
+This is caused by unnecessary allocations: when we do
+```julia
+C[i,j] = sum(A[i, :] .* B[:, j])
+```
+we create one copy of the row `A[i, :]`, one copy of the column `B[:, j]`, and a whole new vector to store their componentwise product.
+"""
+
+# ╔═╡ fe45168c-8cf1-435e-86fc-16cfffef3ec1
+md"""
+### Version 2
+
+Our second version remedies this problem by computing the dot product manually.
+"""
+
+# ╔═╡ 0400175c-5a3c-44a7-9a8a-c30a4756b88c
+begin
+	function matmul2(A, B)
+		m, n, p = size(A, 1), size(A, 2), size(B, 2)
+		C = zeros(Float64, m, p)
+		for i = 1:m, j = 1:p
+			for k = 1:n
+				C[i, j] += A[i, k] * B[k, j]
+			end
+		end
+		return C
+	end
+	
+	@assert matmul2(A, B) ≈ A * B 
+end;
+
+# ╔═╡ cd0cc22f-2d4d-4848-8f15-8f0127a4245b
+@benchmark matmul2($A, $B)
+
+# ╔═╡ 638de554-1bec-453d-9e30-796247aaa4cc
+md"""
+The running time is already improved: can we do even better?
+"""
+
+# ╔═╡ fd4401cf-69e8-4444-92c3-478035301006
+@plutoprofview matmul2(A, B)
+
+# ╔═╡ 23053665-e058-43de-95d9-c688e3a80b0c
+md"""
+This time we see that the main bottleneck is `setindex!`, which is used to modify components of an array. That is not very satisfying.
+"""
+
+# ╔═╡ 9a181530-02e7-47b0-9a86-c191baefac54
+md"""
+### Version 3
+
+Our third version improves upon the previous one by only updating `C[i,j]` once instead of $n$ times.
+"""
+
+# ╔═╡ 159c8baa-fa34-4e9d-af09-774c625194fa
+begin
+	function matmul3(A, B)
+		m, n, p = size(A, 1), size(A, 2), size(B, 2)
+		C = Matrix{Float64}(undef, m, p)
+		for i = 1:m, j = 1:p
+			tmp = 0.
+			for k = 1:n
+				tmp += A[i, k] * B[k, j]
+			end
+			C[i, j] = tmp
+		end
+		return C
+	end
+	
+	@assert matmul3(A, B) ≈ A * B 
+end;
+
+# ╔═╡ 610f6d6f-9d37-4f3d-be78-ab9847162f4d
+@benchmark matmul3($A, $B)
+
+# ╔═╡ c7b551a0-8c2e-4785-b575-8d58e37c14ec
+md"""
+Yet another performance gain! How far can we go?
+"""
+
+# ╔═╡ 2fabb4c0-5861-45f6-8972-c29e55804ca8
+@plutoprofview matmul3(A, B)
+
+# ╔═╡ bd8ab522-457f-4b9c-86b4-fa39b857ccbd
+md"""
+This last profile is pretty satisfying: most of the time is spent in the iteration and the sum, which is what we would expect. So we will stop there.
+"""
+
+# ╔═╡ fe734441-3a46-4b75-aba1-9c3c6519ad64
+md"""
+Note that this example was only for teaching purposes: of course, you should always use built-in linear algebra routines.
+"""
+
+# ╔═╡ 49327d40-31a1-47c8-abc2-4517478ca18f
+@benchmark *($A, $B)
+
 # ╔═╡ b186543b-aae1-4c96-a93d-8507a2a54805
 md"""
-## Examples
+## Other examples
 """
 
 # ╔═╡ 9d1951b4-2bf3-4dd3-9ee2-ec8bb6b953f3
@@ -323,6 +391,11 @@ md"""
 We now demonstrate the impact of type instabilities in functions.
 """
 
+# ╔═╡ 735121ed-1563-4d1b-b5c2-f0c4d80e17a1
+with_terminal() do
+	@code_warntype matmul1(A, B)
+end
+
 # ╔═╡ b47ab7f4-82af-4f09-851e-2352093a0b71
 function randsum_unstable(n)
     x = 1
@@ -342,10 +415,10 @@ function randsum_stable(n)
 end
 
 # ╔═╡ 72421355-fac2-4c68-b9a3-f2c49a02c986
-randsum_unstable(1); @benchmark randsum_unstable(100)
+@benchmark randsum_unstable(100)
 
 # ╔═╡ 908796b8-5880-4cbf-9102-92cbd39cae49
-randsum_stable(1); @benchmark randsum_stable(100)
+@benchmark randsum_stable(100)
 
 # ╔═╡ 769a8892-1f5a-49ea-947d-dbef2262fd6e
 md"""
@@ -411,11 +484,15 @@ The key feature of Julia is multiple dispatch, which allows the right method to 
 This is explained in great detail by the blog post [Type-Dispatch Design: Post Object-Oriented Programming for Julia](https://www.stochasticlifestyle.com/type-dispatch-design-post-object-oriented-programming-julia/).
 """
 
+# ╔═╡ 22d2d50e-8be2-4e1d-a1f7-8fd8d62b4a47
+
+
 # ╔═╡ 00000000-0000-0000-0000-000000000001
 PLUTO_PROJECT_TOML_CONTENTS = """
 [deps]
 BenchmarkTools = "6e4b80f9-dd63-53aa-95a3-0cdb28fa8baf"
 JET = "c3a54625-cd67-489e-a8e7-0a5a0ff4e31b"
+PlutoProfile = "ee419aa8-929d-45cd-acf6-76bd043cd7ba"
 PlutoUI = "7f904dfe-b85e-4ff6-b463-dae2292396a8"
 Profile = "9abbd945-dff8-562f-b5e8-e1ebf5ef1b79"
 ProfileCanvas = "efd6af41-a80b-495e-886c-e51b0c7d77a3"
@@ -423,8 +500,9 @@ ProgressLogging = "33c8b6b6-d38a-422a-b730-caa89a2f386c"
 
 [compat]
 BenchmarkTools = "~1.3.1"
-JET = "~0.5.10"
-PlutoUI = "~0.7.37"
+JET = "~0.5.14"
+PlutoProfile = "~0.3.0"
+PlutoUI = "~0.7.38"
 ProfileCanvas = "~0.1.0"
 ProgressLogging = "~0.1.4"
 """
@@ -484,6 +562,22 @@ version = "0.12.8"
 deps = ["Artifacts", "Libdl"]
 uuid = "e66e0078-7015-5450-92f7-15fbd957f2ae"
 
+[[deps.Configurations]]
+deps = ["ExproniconLite", "OrderedCollections", "TOML"]
+git-tree-sha1 = "ab9b7c51e8acdd20c769bccde050b5615921c533"
+uuid = "5218b696-f38b-4ac9-8b61-a12ec717816d"
+version = "0.17.3"
+
+[[deps.DataAPI]]
+git-tree-sha1 = "fb5f5316dd3fd4c5e7c30a24d50643b73e37cd40"
+uuid = "9a962f9c-6df0-11e9-0e5d-c546b8b5ee8a"
+version = "1.10.0"
+
+[[deps.DataValueInterfaces]]
+git-tree-sha1 = "bfc1187b79289637fa0ef6d4436ebdfe6905cbd6"
+uuid = "e2d170a0-9d28-54be-80f0-106bbe20a464"
+version = "1.0.0"
+
 [[deps.Dates]]
 deps = ["Printf"]
 uuid = "ade2ca70-3891-5945-98fb-dc099432e06a"
@@ -495,6 +589,11 @@ uuid = "8ba89e20-285c-5b6f-9357-94700520ee1b"
 [[deps.Downloads]]
 deps = ["ArgTools", "LibCURL", "NetworkOptions"]
 uuid = "f43a241f-c20a-4ad4-852c-f6b1247861c6"
+
+[[deps.ExproniconLite]]
+git-tree-sha1 = "8b08cc88844e4d01db5a2405a08e9178e19e479e"
+uuid = "55351af7-c7e9-48d6-89ff-24e801d99491"
+version = "0.6.13"
 
 [[deps.FileIO]]
 deps = ["Pkg", "Requires", "UUIDs"]
@@ -516,6 +615,18 @@ deps = ["AbstractTrees", "Colors", "FileIO", "FixedPointNumbers", "IndirectArray
 git-tree-sha1 = "d9eee53657f6a13ee51120337f98684c9c702264"
 uuid = "08572546-2f56-4bcf-ba4e-bab62c3a3f89"
 version = "0.2.10"
+
+[[deps.FuzzyCompletions]]
+deps = ["REPL"]
+git-tree-sha1 = "efd6c064e15e92fcce436977c825d2117bf8ce76"
+uuid = "fb4132e2-a121-4a70-b8a1-d5b831dcdcc2"
+version = "0.5.0"
+
+[[deps.HTTP]]
+deps = ["Base64", "Dates", "IniFile", "Logging", "MbedTLS", "NetworkOptions", "Sockets", "URIs"]
+git-tree-sha1 = "0fa77022fe4b511826b39c894c90daf5fce3334a"
+uuid = "cd3eb016-35fb-5094-929b-558a96fad6f3"
+version = "0.9.17"
 
 [[deps.Hyperscript]]
 deps = ["Test"]
@@ -540,9 +651,19 @@ git-tree-sha1 = "012e604e1c7458645cb8b436f8fba789a51b257f"
 uuid = "9b13fd28-a010-5f03-acff-a1bbcff69959"
 version = "1.0.0"
 
+[[deps.IniFile]]
+git-tree-sha1 = "f550e6e32074c939295eb5ea6de31849ac2c9625"
+uuid = "83e8ac13-25f8-5344-8a64-a9f2b223428f"
+version = "0.5.1"
+
 [[deps.InteractiveUtils]]
 deps = ["Markdown"]
 uuid = "b77e0a4c-d291-57a0-90e8-8db25a27a240"
+
+[[deps.IteratorInterfaceExtensions]]
+git-tree-sha1 = "a3f24677c21f5bbe9d2a714f95dcd58337fb2856"
+uuid = "82899510-4779-5014-852e-03e436cf321d"
+version = "1.0.0"
 
 [[deps.JET]]
 deps = ["InteractiveUtils", "JuliaInterpreter", "LoweredCodeUtils", "MacroTools", "Pkg", "Revise", "Test"]
@@ -610,6 +731,12 @@ version = "0.5.9"
 deps = ["Base64"]
 uuid = "d6f4376e-aef5-505a-96c1-9c027394607a"
 
+[[deps.MbedTLS]]
+deps = ["Dates", "MbedTLS_jll", "Random", "Sockets"]
+git-tree-sha1 = "1c38e51c3d08ef2278062ebceade0e46cefc96fe"
+uuid = "739be429-bea8-5141-9913-cc70e7f3736d"
+version = "1.0.3"
+
 [[deps.MbedTLS_jll]]
 deps = ["Artifacts", "Libdl"]
 uuid = "c8ffd9c3-330d-5841-b78e-0817d7145fa1"
@@ -619,6 +746,12 @@ uuid = "a63ad114-7e13-5084-954f-fe012c677804"
 
 [[deps.MozillaCACerts_jll]]
 uuid = "14a3606d-f60d-562e-9121-12d972cd8159"
+
+[[deps.MsgPack]]
+deps = ["Serialization"]
+git-tree-sha1 = "a8cbf066b54d793b9a48c5daa5d586cf2b5bd43d"
+uuid = "99f44e22-a591-53d1-9472-aa23ef4bd671"
+version = "1.1.0"
 
 [[deps.NetworkOptions]]
 uuid = "ca575930-c2e3-43a9-ace4-1e988b2c1908"
@@ -641,6 +774,18 @@ version = "2.3.1"
 [[deps.Pkg]]
 deps = ["Artifacts", "Dates", "Downloads", "LibGit2", "Libdl", "Logging", "Markdown", "Printf", "REPL", "Random", "SHA", "Serialization", "TOML", "Tar", "UUIDs", "p7zip_jll"]
 uuid = "44cfe95a-1eb2-52ea-b672-e2afdf69b78f"
+
+[[deps.Pluto]]
+deps = ["Base64", "Configurations", "Dates", "Distributed", "FileWatching", "FuzzyCompletions", "HTTP", "InteractiveUtils", "Logging", "Markdown", "MsgPack", "Pkg", "REPL", "RelocatableFolders", "Sockets", "Tables", "UUIDs"]
+git-tree-sha1 = "1302c9385c9e5b47f9872688015927f7929371cb"
+uuid = "c3e4b0f8-55cb-11ea-2926-15256bba5781"
+version = "0.18.4"
+
+[[deps.PlutoProfile]]
+deps = ["AbstractTrees", "FlameGraphs", "Pluto", "Profile", "ProfileCanvas"]
+git-tree-sha1 = "d8189132bb02e041f537f96d774de441ccb5af88"
+uuid = "ee419aa8-929d-45cd-acf6-76bd043cd7ba"
+version = "0.3.0"
 
 [[deps.PlutoUI]]
 deps = ["AbstractPlutoDingetjes", "Base64", "ColorTypes", "Dates", "Hyperscript", "HypertextLiteral", "IOCapture", "InteractiveUtils", "JSON", "Logging", "Markdown", "Random", "Reexport", "UUIDs"]
@@ -681,6 +826,12 @@ git-tree-sha1 = "45e428421666073eab6f2da5c9d310d99bb12f9b"
 uuid = "189a3867-3050-52da-a836-e630ba90ab69"
 version = "1.2.2"
 
+[[deps.RelocatableFolders]]
+deps = ["SHA", "Scratch"]
+git-tree-sha1 = "307761d71804208c0c62abdbd0ea6822aa5bbefd"
+uuid = "05181044-ff0b-4ac5-8273-598c1e38db00"
+version = "0.2.0"
+
 [[deps.Requires]]
 deps = ["UUIDs"]
 git-tree-sha1 = "838a3a4188e2ded87a4f9f184b4b0d78a1e91cb7"
@@ -695,6 +846,12 @@ version = "3.3.3"
 
 [[deps.SHA]]
 uuid = "ea8e919c-243c-51af-8825-aaa63cd721ce"
+
+[[deps.Scratch]]
+deps = ["Dates"]
+git-tree-sha1 = "0b4b7f1393cff97c33891da2a0bf69c6ed241fda"
+uuid = "6c6a2e73-6563-6170-7368-637461726353"
+version = "1.1.0"
 
 [[deps.Serialization]]
 uuid = "9e88b42a-f829-5b0c-bbe9-9e923198166b"
@@ -714,6 +871,18 @@ uuid = "10745b16-79ce-11e8-11f9-7d13ad32a3b2"
 deps = ["Dates"]
 uuid = "fa267f1f-6049-4f14-aa54-33bafae1ed76"
 
+[[deps.TableTraits]]
+deps = ["IteratorInterfaceExtensions"]
+git-tree-sha1 = "c06b2f539df1c6efa794486abfb6ed2022561a39"
+uuid = "3783bdb8-4a98-5b6b-af9a-565f29a5fe9c"
+version = "1.0.1"
+
+[[deps.Tables]]
+deps = ["DataAPI", "DataValueInterfaces", "IteratorInterfaceExtensions", "LinearAlgebra", "OrderedCollections", "TableTraits", "Test"]
+git-tree-sha1 = "5ce79ce186cc678bbb5c5681ca3379d1ddae11a1"
+uuid = "bd369af6-aec1-5ad0-b16a-f7cc5008161c"
+version = "1.7.0"
+
 [[deps.Tar]]
 deps = ["ArgTools", "SHA"]
 uuid = "a4e569a6-e804-4fa4-b0f3-eef7a1d5b13e"
@@ -726,6 +895,11 @@ uuid = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
 git-tree-sha1 = "6bac775f2d42a611cdfcd1fb217ee719630c4175"
 uuid = "410a4b4d-49e4-4fbc-ab6d-cb71b17b3775"
 version = "0.1.6"
+
+[[deps.URIs]]
+git-tree-sha1 = "97bbe755a53fe859669cd907f2d96aee8d2c1355"
+uuid = "5c2747f8-b7ea-4ff2-ba2e-563bfd36b1d4"
+version = "1.3.0"
 
 [[deps.UUIDs]]
 deps = ["Random", "SHA"]
@@ -752,44 +926,51 @@ uuid = "3f19e933-33d8-53b3-aaab-bd5110c3b7a0"
 """
 
 # ╔═╡ Cell order:
-# ╠═bca07932-eb86-40e3-9b47-aace0efda5d0
+# ╠═f5231f65-da94-4ed3-af65-857edb42ee08
 # ╠═5de2a556-f3af-4a64-a5c6-32d30f758be3
 # ╟─e1852c8d-4028-409e-8e1a-8253bbd6e6a5
 # ╠═1ac5ba38-0eef-41bb-8f9c-3bbf057cae21
 # ╟─9331fad2-f29e-11eb-0349-477bd2e7e412
-# ╟─62eeeb90-8bdf-4a70-bcef-ab31136c264c
-# ╠═781a7cdd-d36e-40b4-9de1-f832cba41377
-# ╠═75010618-78e8-4490-83bb-158c781afa30
-# ╠═8fd4bbea-6c88-4302-b8b6-128aff82db48
-# ╠═f9b8eed6-c289-4b41-828d-fd469fd3a321
-# ╠═2b7a5cdb-8154-4009-ac63-57749b6cc5d3
 # ╟─3d98e7db-c643-4500-987d-4a225e55b2a5
 # ╠═b4f2a99e-de45-49d2-be86-9f2d03357462
 # ╟─068b3e45-5105-48aa-a547-536470f6abda
 # ╠═7a75c990-46b4-484e-acc4-65e34f41a9f2
 # ╟─f7b1b44f-2aa6-4c5c-97a2-ac7037fb48ce
-# ╠═299e7754-b4e9-4c53-83d6-6f30e130ed01
 # ╠═1fb43343-083b-4b1a-b622-d88c9aa0808c
 # ╠═a28f7911-3dbb-45fb-a82d-2834d3c8502c
 # ╠═4da8a7ca-3cea-4629-a66d-44f3b907af09
 # ╟─c0a7c1fe-457f-4e52-b0ea-2821e40817ea
-# ╠═64189969-f5b2-49cf-a2e9-d837e76ed79d
 # ╠═834f6172-15bc-4e7d-ae22-e18ef2e8e22b
-# ╠═a0f3b8a4-a0c6-43b4-b55c-641b14d4f05a
-# ╠═63a87cc9-e078-4390-bfb9-eab65e251a30
-# ╟─1d0af35c-0cee-4f70-9346-014ab294a614
 # ╟─94c78148-c651-4a59-9e62-5c7e9576d1e8
-# ╠═4df3ba6b-49d4-4d65-8839-bb8976ab8b8c
-# ╟─46422b77-ae0a-4174-9c73-4f6399b63b5d
-# ╠═36d679d0-999d-404a-91f6-b678ba1344d3
-# ╠═7c57439e-77c6-4e3f-bace-d7ebc428cac9
-# ╟─091d3e08-9ae3-4b33-be00-de62a5998c80
-# ╟─c43e1688-645e-4b67-9bba-b249f2277374
-# ╠═9926023d-66d0-4f47-b652-9a144b3a45fb
+# ╟─c42e3aa8-48c7-4bb1-bb35-2301476e085b
+# ╠═c44f3dc9-ff19-4ba4-9388-73cfaf23f8e8
 # ╟─0fb6ed33-601c-4392-b7d9-32230c979d39
 # ╟─a6e9da76-1ff0-4b54-9b55-4856ca32b251
 # ╟─fa483fea-bf9f-4764-8d4f-c6d33e3336fb
 # ╟─d3c1a86c-8c8f-4ad6-ac3c-2ba0f838d139
+# ╟─43bad028-9d16-426f-9cdb-a37b1ee1a623
+# ╠═857509a7-f07a-4bf0-9383-207984b95faa
+# ╟─7386749b-b2ab-48a7-a1d2-46e7f31e72e3
+# ╠═6cd86e7a-9f82-4da1-a8f0-4ed2c1068ab9
+# ╟─382517ac-c4f5-45f1-bfe6-120e06c97b1c
+# ╠═5d10a00b-bfa9-49c7-9f4b-503351fa2842
+# ╟─38cc6383-c7d8-46b4-8531-251bd196d960
+# ╠═62163e17-4265-4c97-95bb-29d608e80b07
+# ╟─9d8b7e25-c9c6-4aba-a33c-66fd18d804c0
+# ╟─fe45168c-8cf1-435e-86fc-16cfffef3ec1
+# ╠═0400175c-5a3c-44a7-9a8a-c30a4756b88c
+# ╠═cd0cc22f-2d4d-4848-8f15-8f0127a4245b
+# ╟─638de554-1bec-453d-9e30-796247aaa4cc
+# ╠═fd4401cf-69e8-4444-92c3-478035301006
+# ╟─23053665-e058-43de-95d9-c688e3a80b0c
+# ╟─9a181530-02e7-47b0-9a86-c191baefac54
+# ╠═159c8baa-fa34-4e9d-af09-774c625194fa
+# ╠═610f6d6f-9d37-4f3d-be78-ab9847162f4d
+# ╟─c7b551a0-8c2e-4785-b575-8d58e37c14ec
+# ╠═2fabb4c0-5861-45f6-8972-c29e55804ca8
+# ╟─bd8ab522-457f-4b9c-86b4-fa39b857ccbd
+# ╟─fe734441-3a46-4b75-aba1-9c3c6519ad64
+# ╠═49327d40-31a1-47c8-abc2-4517478ca18f
 # ╟─b186543b-aae1-4c96-a93d-8507a2a54805
 # ╟─9d1951b4-2bf3-4dd3-9ee2-ec8bb6b953f3
 # ╟─1067868e-2ca8-463f-bc55-c444aaf3b37c
@@ -810,6 +991,7 @@ uuid = "3f19e933-33d8-53b3-aaab-bd5110c3b7a0"
 # ╠═44f17b4d-c498-4126-9647-4eceaa4a3f21
 # ╟─5aee27ef-c3cf-43b0-b1fd-e058e90bf112
 # ╟─e7c68548-a654-40dd-9b3a-10ce24b6cd5c
+# ╠═735121ed-1563-4d1b-b5c2-f0c4d80e17a1
 # ╠═b47ab7f4-82af-4f09-851e-2352093a0b71
 # ╠═21e5063b-3d55-4a25-88bb-1dc02322828b
 # ╠═72421355-fac2-4c68-b9a3-f2c49a02c986
@@ -824,5 +1006,6 @@ uuid = "3f19e933-33d8-53b3-aaab-bd5110c3b7a0"
 # ╟─bc1695e8-12c2-4630-a630-a12c53943eb8
 # ╟─ada6d5f4-f5fc-4c5f-9724-d29f4bb2a06a
 # ╟─fdf97758-26c1-4157-a5d1-af89578f6277
+# ╠═22d2d50e-8be2-4e1d-a1f7-8fd8d62b4a47
 # ╟─00000000-0000-0000-0000-000000000001
 # ╟─00000000-0000-0000-0000-000000000002
