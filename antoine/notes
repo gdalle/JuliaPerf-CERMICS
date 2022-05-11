@@ -1,0 +1,67 @@
+structure d'un CPU: registres, RAM, disque
+
+test.c -O0 -o test
+objdump -d test
+regarder "loop" avec O0, O1, O3
+
+O0:
+    115c:       f3 0f 1e fa             endbr64
+    1160:       55                      push   %rbp                  save value of rbp
+    1161:       48 89 e5                mov    %rsp,%rbp             rbp = rsp
+    1164:       89 7d ec                mov    %edi,-0x14(%rbp)      v14 = edi # edi : input argument = n
+    1167:       c7 45 fc 00 00 00 00    movl   $0x0,-0x4(%rbp)       v4 = 0 # m
+    116e:       eb 04                   jmp    1174 <loop+0x18>      jmp 1174
+    1170:       83 45 fc 01             addl   $0x1,-0x4(%rbp)       1170 m += 1
+    1174:       8b 45 fc                mov    -0x4(%rbp),%eax       1174: eax = m
+    1177:       3b 45 ec                cmp    -0x14(%rbp),%eax      if m ≤ n
+    117a:       7e f4                   jle    1170 <loop+0x14>          jmp 1170
+    117c:       8b 45 fc                mov    -0x4(%rbp),%eax       eax = m # eax : return value
+    117f:       5d                      pop    %rbp                  restore value of rbp
+    1180:       c3                      retq
+
+O1
+0000000000001151 <loop>:
+    1151:       f3 0f 1e fa             endbr64
+    1155:       85 ff                   test   %edi,%edi             if n < 0
+    1157:       78 13                   js     116c <loop+0x1b>          jmp 116c
+    1159:       8d 4f 01                lea    0x1(%rdi),%ecx        ecx = n+1
+    115c:       ba 00 00 00 00          mov    $0x0,%edx             edx = 0
+    1161:       83 c2 01                add    $0x1,%edx             1161: edx += 1
+    1164:       39 ca                   cmp    %ecx,%edx             if ecx != edx
+    1166:       75 f9                   jne    1161 <loop+0x10>          jump 1161
+    1168:       8d 47 01                lea    0x1(%rdi),%eax        eax = rdi+1
+    116b:       c3                      retq
+    116c:       b8 00 00 00 00          mov    $0x0,%eax             116c: eax = 0
+    1171:       c3                      retq
+
+O2
+0000000000001190 <loop>:
+    1190:       f3 0f 1e fa             endbr64
+    1194:       8d 47 01                lea    0x1(%rdi),%eax        eax = n+1
+    1197:       85 ff                   test   %edi,%edi             
+    1199:       ba 00 00 00 00          mov    $0x0,%edx             edx = 0
+    119e:       0f 48 c2                cmovs  %edx,%eax             if n < 0, eax = n
+    11a1:       c3                      retq
+    11a2:       66 2e 0f 1f 84 00 00    nopw   %cs:0x0(%rax,%rax,1)
+    11a9:       00 00 00
+    11ac:       0f 1f 40 00             nopl   0x0(%rax)
+
+
+
+sum. À votre avis, à quoi va ressembler le plot ?
+discuter caches, code_native
+
+http://ithare.com/infographics-operation-costs-in-cpu-clock-cycles/
+https://viralinstruction.com/posts/hardware/
+
+rowcol.jl
+
+matmul.jl
+
+roofline model
+
+computing peakflops: 5e10. Processor = 2.3ghz => factor 20. FMA: factor 10. AVX: 4 double à la fois, 2 ops par cycle: factor 8
+
+multithreading (@threads, floops) vs GPU vs distributed (MPI)
+multithreading: sum vs sum(expensive_function)
+MPI: example from DFTK
