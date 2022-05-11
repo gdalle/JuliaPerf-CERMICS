@@ -1,5 +1,5 @@
 ### A Pluto.jl notebook ###
-# v0.19.3
+# v0.19.4
 
 using Markdown
 using InteractiveUtils
@@ -14,11 +14,14 @@ begin
 	using ProgressLogging
 end
 
+# ╔═╡ 5de2a556-f3af-4a64-a5c6-32d30f758be3
+TableOfContents()
+
 # ╔═╡ e1852c8d-4028-409e-8e1a-8253bbd6e6a5
 html"<button onclick='present()'>Toggle presentation mode</button>"
 
-# ╔═╡ 5de2a556-f3af-4a64-a5c6-32d30f758be3
-TableOfContents()
+# ╔═╡ 1ac5ba38-0eef-41bb-8f9c-3bbf057cae21
+VERSION
 
 # ╔═╡ 9331fad2-f29e-11eb-0349-477bd2e7e412
 md"""
@@ -370,15 +373,42 @@ This time, JET.jl would not have caught it, probably since it considers a union 
 # ╔═╡ 5d07342c-d4b4-4f3b-b523-514c0f252813
 @report_opt randsum_stable(1)
 
+# ╔═╡ fe04e854-1393-42fc-b6d7-6a4b3848e0ef
+md"""
+# Going further
+"""
+
+# ╔═╡ bc1695e8-12c2-4630-a630-a12c53943eb8
+md"""
+## Memory profiling
+
+Julia 1.8 (which is still a [beta release](https://discourse.julialang.org/t/julia-v1-8-0-beta3-and-v1-6-6-lts-are-now-available/78820)) introduced many novelties.
+One of the most significant is a built-in memory profiler, which mimics the behavior of the temporal profiler shown above.
+It is still a bit [hard to use](https://github.com/JuliaLang/julia/issues/45268) but it can help diagnose which lines of code are responsible for the most allocations.
+"""
+
+# ╔═╡ ada6d5f4-f5fc-4c5f-9724-d29f4bb2a06a
+md"""
+## Package latency
+
+A major source of frustration for Julia beginners is the time that elapses from the creation of the REPL until the first useful output, also called "time to first plot".
+As a package developer, there are many resources available to help you address this problem:
+- Tim Holy's great talk at JuliaCon 2021: [Package latency and what developers can do to reduce it](https://youtu.be/rVBgrWYKLHY)
+- Several blog posts:
+  - [Analyzing sources of compiler latency in Julia: method invalidations ](https://julialang.org/blog/2020/08/invalidations/)
+  - [Tutorial on precompilation](https://julialang.org/blog/2021/01/precompile_tutorial/)
+  - [Profiling type inference](https://julialang.org/blog/2021/01/snoopi_deep/)
+"""
+
 # ╔═╡ fdf97758-26c1-4157-a5d1-af89578f6277
 md"""
-# Generic programming
+## Generic programming
 
 The key feature of Julia is multiple dispatch, which allows the right method to be chosen based on argument types. This is what makes it possible for multiple packages to work together seamlessly, but to achieve that we must remain as generic as possible:
 - Do not overspecify input types
 - Write smaller dispatchable functions instead of `if - else` blocks
 
-To go further, see [Type-Dispatch Design: Post Object-Oriented Programming for Julia](https://www.stochasticlifestyle.com/type-dispatch-design-post-object-oriented-programming-julia/).
+This is explained in great detail by the blog post [Type-Dispatch Design: Post Object-Oriented Programming for Julia](https://www.stochasticlifestyle.com/type-dispatch-design-post-object-oriented-programming-julia/).
 """
 
 # ╔═╡ 00000000-0000-0000-0000-000000000001
@@ -434,15 +464,15 @@ version = "1.3.1"
 
 [[deps.CodeTracking]]
 deps = ["InteractiveUtils", "UUIDs"]
-git-tree-sha1 = "9fb640864691a0936f94f89150711c36072b0e8f"
+git-tree-sha1 = "6d4fa04343a7fc9f9cb9cff9558929f3d2752717"
 uuid = "da1fd8a2-8d9e-5ec2-8556-3022fb5608a2"
-version = "1.0.8"
+version = "1.0.9"
 
 [[deps.ColorTypes]]
 deps = ["FixedPointNumbers", "Random"]
-git-tree-sha1 = "024fe24d83e4a5bf5fc80501a314ce0d1aa35597"
+git-tree-sha1 = "63d1e802de0c4882c00aee5cb16f9dd4d6d7c59c"
 uuid = "3da002f7-5984-5a60-b8a6-cbb66c0b333f"
-version = "0.11.0"
+version = "0.11.1"
 
 [[deps.Colors]]
 deps = ["ColorTypes", "FixedPointNumbers", "Reexport"]
@@ -468,9 +498,9 @@ uuid = "f43a241f-c20a-4ad4-852c-f6b1247861c6"
 
 [[deps.FileIO]]
 deps = ["Pkg", "Requires", "UUIDs"]
-git-tree-sha1 = "80ced645013a5dbdc52cf70329399c35ce007fae"
+git-tree-sha1 = "9267e5f50b0e12fdfd5a2455534345c4cf2c7f7a"
 uuid = "5789e2e9-d7fb-5bc7-8068-2c6fae9b9549"
-version = "1.13.0"
+version = "1.14.0"
 
 [[deps.FileWatching]]
 uuid = "7b1f6079-737a-58dc-b8bc-7a2ca5c1b5ee"
@@ -494,9 +524,10 @@ uuid = "47d2ed2b-36de-50cf-bf87-49c2cf4b8b91"
 version = "0.0.4"
 
 [[deps.HypertextLiteral]]
-git-tree-sha1 = "2b078b5a615c6c0396c77810d92ee8c6f470d238"
+deps = ["Tricks"]
+git-tree-sha1 = "c47c5fa4c5308f27ccaac35504858d8914e102f9"
 uuid = "ac1192a8-f4b3-4bfe-ba22-af5b92cd3ab2"
-version = "0.9.3"
+version = "0.9.4"
 
 [[deps.IOCapture]]
 deps = ["Logging", "Random"]
@@ -515,9 +546,9 @@ uuid = "b77e0a4c-d291-57a0-90e8-8db25a27a240"
 
 [[deps.JET]]
 deps = ["InteractiveUtils", "JuliaInterpreter", "LoweredCodeUtils", "MacroTools", "Pkg", "Revise", "Test"]
-git-tree-sha1 = "64e24a604f1950b878baae88c2f2a0658e1d6f01"
+git-tree-sha1 = "db7e3490a86714a183d5b11576f25340160783ff"
 uuid = "c3a54625-cd67-489e-a8e7-0a5a0ff4e31b"
-version = "0.5.10"
+version = "0.5.14"
 
 [[deps.JSON]]
 deps = ["Dates", "Mmap", "Parsers", "Unicode"]
@@ -527,9 +558,9 @@ version = "0.21.3"
 
 [[deps.JuliaInterpreter]]
 deps = ["CodeTracking", "InteractiveUtils", "Random", "UUIDs"]
-git-tree-sha1 = "9c43a2eb47147a8776ca2ba489f15a9f6f2906f8"
+git-tree-sha1 = "52617c41d2761cc05ed81fe779804d3b7f14fff7"
 uuid = "aa1ae85d-cabe-5617-a682-6adf51b2e16a"
-version = "0.9.11"
+version = "0.9.13"
 
 [[deps.LeftChildRightSiblingTrees]]
 deps = ["AbstractTrees"]
@@ -565,9 +596,9 @@ uuid = "56ddb016-857b-54e1-b83d-db4d58db5568"
 
 [[deps.LoweredCodeUtils]]
 deps = ["JuliaInterpreter"]
-git-tree-sha1 = "6b0440822974cab904c8b14d79743565140567f6"
+git-tree-sha1 = "dedbebe234e06e1ddad435f5c6f4b85cd8ce55f7"
 uuid = "6f1432cf-f94c-5a45-995e-cdbf5db27b0b"
-version = "2.2.1"
+version = "2.2.2"
 
 [[deps.MacroTools]]
 deps = ["Markdown", "Random"]
@@ -603,9 +634,9 @@ version = "1.4.1"
 
 [[deps.Parsers]]
 deps = ["Dates"]
-git-tree-sha1 = "85b5da0fa43588c75bb1ff986493443f821c70b7"
+git-tree-sha1 = "1285416549ccfcdf0c50d4997a94331e88d68413"
 uuid = "69de0a69-1ddd-5017-9359-2bf0b02dc9f0"
-version = "2.2.3"
+version = "2.3.1"
 
 [[deps.Pkg]]
 deps = ["Artifacts", "Dates", "Downloads", "LibGit2", "Libdl", "Logging", "Markdown", "Printf", "REPL", "Random", "SHA", "Serialization", "TOML", "Tar", "UUIDs", "p7zip_jll"]
@@ -613,9 +644,9 @@ uuid = "44cfe95a-1eb2-52ea-b672-e2afdf69b78f"
 
 [[deps.PlutoUI]]
 deps = ["AbstractPlutoDingetjes", "Base64", "ColorTypes", "Dates", "Hyperscript", "HypertextLiteral", "IOCapture", "InteractiveUtils", "JSON", "Logging", "Markdown", "Random", "Reexport", "UUIDs"]
-git-tree-sha1 = "bf0a1121af131d9974241ba53f601211e9303a9e"
+git-tree-sha1 = "670e559e5c8e191ded66fa9ea89c97f10376bb4c"
 uuid = "7f904dfe-b85e-4ff6-b463-dae2292396a8"
-version = "0.7.37"
+version = "0.7.38"
 
 [[deps.Printf]]
 deps = ["Unicode"]
@@ -691,6 +722,11 @@ uuid = "a4e569a6-e804-4fa4-b0f3-eef7a1d5b13e"
 deps = ["InteractiveUtils", "Logging", "Random", "Serialization"]
 uuid = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
 
+[[deps.Tricks]]
+git-tree-sha1 = "6bac775f2d42a611cdfcd1fb217ee719630c4175"
+uuid = "410a4b4d-49e4-4fbc-ab6d-cb71b17b3775"
+version = "0.1.6"
+
 [[deps.UUIDs]]
 deps = ["Random", "SHA"]
 uuid = "cf7118a7-6976-5b1a-9a39-7adc72f591a4"
@@ -719,6 +755,7 @@ uuid = "3f19e933-33d8-53b3-aaab-bd5110c3b7a0"
 # ╠═bca07932-eb86-40e3-9b47-aace0efda5d0
 # ╠═5de2a556-f3af-4a64-a5c6-32d30f758be3
 # ╟─e1852c8d-4028-409e-8e1a-8253bbd6e6a5
+# ╠═1ac5ba38-0eef-41bb-8f9c-3bbf057cae21
 # ╟─9331fad2-f29e-11eb-0349-477bd2e7e412
 # ╟─62eeeb90-8bdf-4a70-bcef-ab31136c264c
 # ╠═781a7cdd-d36e-40b4-9de1-f832cba41377
@@ -783,6 +820,9 @@ uuid = "3f19e933-33d8-53b3-aaab-bd5110c3b7a0"
 # ╟─b3be8a6e-c00f-413f-858e-aee32f32dd18
 # ╠═2b0f6c30-112e-45bc-a3ea-3da4012922a9
 # ╠═5d07342c-d4b4-4f3b-b523-514c0f252813
+# ╟─fe04e854-1393-42fc-b6d7-6a4b3848e0ef
+# ╟─bc1695e8-12c2-4630-a630-a12c53943eb8
+# ╟─ada6d5f4-f5fc-4c5f-9724-d29f4bb2a06a
 # ╟─fdf97758-26c1-4157-a5d1-af89578f6277
 # ╟─00000000-0000-0000-0000-000000000001
 # ╟─00000000-0000-0000-0000-000000000002
