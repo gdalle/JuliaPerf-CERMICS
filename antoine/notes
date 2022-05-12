@@ -63,6 +63,9 @@ matmul.jl
 
 roofline model
 
+comment optimiser matmul : vectorisation + cache
+https://github.com/JuliaLinearAlgebra/Octavian.jl
+
 computing peakflops: 5e10. Processor = 2.3ghz => factor 20. FMA: factor 10. AVX: 4 double à la fois, 2 ops par cycle: factor 8
 
 multithreading (@threads, floops) vs GPU vs distributed (MPI)
