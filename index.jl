@@ -7,6 +7,7 @@ using InteractiveUtils
 # ╔═╡ f5231f65-da94-4ed3-af65-857edb42ee08
 begin
 	using BenchmarkTools
+	using ForwardDiff
 	using JET
 	using PlutoProfile
 	using PlutoUI
@@ -14,9 +15,6 @@ begin
 	using ProfileCanvas
 	using ProgressLogging
 end
-
-# ╔═╡ a775f1d4-4d3e-467e-8c8f-13f90ccbede4
-using ForwardDiff
 
 # ╔═╡ 5de2a556-f3af-4a64-a5c6-32d30f758be3
 TableOfContents()
@@ -515,8 +513,7 @@ p_genius = GeniusPoint(3., 5.)
 md"""
 ## Version 3 - analysis
 
-`GeniusPoint` is just as fast as `CleverPoint` when applied to coordinates of type `Float64`. However, the former can adapt to any coordinate type, which is often useful, for instance in (forward-mode) automatic differentiation.
-This is an instance of generic programming, as mentioned above.
+`GeniusPoint` is just as fast as `CleverPoint` when applied to coordinates of type `Float64`. However, the former is generic: it can adapt to any coordinate type, which is often useful. A well-known example is [forward-mode automatic differentiation](https://en.wikipedia.org/wiki/Automatic_differentiation#Forward_accumulation), which uses dual numbers instead of standard floats.
 """
 
 # ╔═╡ 8eadd2ef-cfb4-4a53-b3e8-5bf331d51933
@@ -1119,7 +1116,6 @@ uuid = "3f19e933-33d8-53b3-aaab-bd5110c3b7a0"
 
 # ╔═╡ Cell order:
 # ╠═f5231f65-da94-4ed3-af65-857edb42ee08
-# ╠═a775f1d4-4d3e-467e-8c8f-13f90ccbede4
 # ╠═5de2a556-f3af-4a64-a5c6-32d30f758be3
 # ╠═1ac5ba38-0eef-41bb-8f9c-3bbf057cae21
 # ╟─e1852c8d-4028-409e-8e1a-8253bbd6e6a5
