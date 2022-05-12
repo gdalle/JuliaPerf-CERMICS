@@ -1,5 +1,5 @@
 ### A Pluto.jl notebook ###
-# v0.18.4
+# v0.19.4
 
 using Markdown
 using InteractiveUtils
@@ -15,18 +15,21 @@ begin
 	using ProgressLogging
 end
 
+# ╔═╡ a775f1d4-4d3e-467e-8c8f-13f90ccbede4
+using ForwardDiff
+
 # ╔═╡ 5de2a556-f3af-4a64-a5c6-32d30f758be3
 TableOfContents()
-
-# ╔═╡ e1852c8d-4028-409e-8e1a-8253bbd6e6a5
-html"<button onclick='present()'>Toggle presentation mode</button>"
 
 # ╔═╡ 1ac5ba38-0eef-41bb-8f9c-3bbf057cae21
 VERSION
 
+# ╔═╡ e1852c8d-4028-409e-8e1a-8253bbd6e6a5
+html"<button onclick='present()'>Toggle presentation mode</button>"
+
 # ╔═╡ 9331fad2-f29e-11eb-0349-477bd2e7e412
 md"""
-# Monitoring code performance
+# Analysis toolbox
 
 Before trying to improve the efficiency of our code, it is essential to analyze it and locate potential improvements.
 """
@@ -52,15 +55,15 @@ Julia also has a built-in [logging system](https://docs.julialang.org/en/v1/stdl
 # ╔═╡ 7a75c990-46b4-484e-acc4-65e34f41a9f2
 for i in 1:10
 	if i % 2 == 0
-		@info "Even integer" i
+		@info "Even integer" i i÷2
 	else
-		@warn "Odd integer" i
+		@warn "Odd integer" i i÷2
 	end
 end
 
 # ╔═╡ f7b1b44f-2aa6-4c5c-97a2-ac7037fb48ce
 md"""
-## Benchmarking
+## Benchmarking (one time)
 
 To evaluate the efficiency of a function, we need to know how long it takes and how much memory it uses. Base Julia includes macros for these things:
 - `@elapsed` returns the computation time (in seconds)
@@ -79,6 +82,8 @@ To evaluate the efficiency of a function, we need to know how long it takes and 
 
 # ╔═╡ c0a7c1fe-457f-4e52-b0ea-2821e40817ea
 md"""
+## Benchmarking (several times)
+
 When dealing with short-running functions, we get a more accurate evaluation by running them repeatedly. This is what [BenchmarkTools.jl](https://github.com/JuliaCI/BenchmarkTools.jl) does with the following macros:
 - `@belapsed` for time
 - `@ballocated` for memory
@@ -93,81 +98,137 @@ When using them, it is important to [interpolate](https://juliaci.github.io/Benc
 md"""
 ## Profiling
 
-Often, benchmarking is not enough, and we need to dig deep into the code to figure out what takes time and what.
-This is what [profiling](https://docs.julialang.org/en/v1/manual/profile/) is about: all it does is run your function and ping it periodically to figure out in which subroutine it is. The ping count for each nested call gives a good approximation of the time spent in it, and can help you detect bottlenecks.
-"""
-
-# ╔═╡ c42e3aa8-48c7-4bb1-bb35-2301476e085b
-md"""
-Profiling results are easier to analyze with the help of a flame graph.
-To generate one, we will use a Pluto adaptation of the `@profview` macro (which is [available in VSCode](https://www.julia-vscode.org/docs/stable/userguide/profiler/)).
-Each layer of the flame graph represents one level of the call stack (the nested sequence of functions that are called by your code). The width of a tile is proportional to its execution time.
+[Profiling](https://docs.julialang.org/en/v1/manual/profile/) is more precise than benchmarking: it tells you how much time you spend *in each nested function call*.
+We visualize profiling results using a Pluto adaptation of the [VSCode `@profview` macro](https://www.julia-vscode.org/docs/stable/userguide/profiler/).
+Each layer of the flame graph represents one level of the call stack. The width of a tile is proportional to its execution time.
 The first few layers are usually boilerplate code, and we need to scroll down to reach user-defined functions.
-Special attention should be paid to the colors:
-- blue means everything is fine
-- yellow means "garbage collection" (usually a sign of excessive allocations)
-- red means "runtime dispatch" (usually a sign of bad typing, we will come back to it).
 """
 
 # ╔═╡ c44f3dc9-ff19-4ba4-9388-73cfaf23f8e8
 @plutoprofview exp(rand(500, 500))
 
+# ╔═╡ a7de0ec9-6b01-4b42-8cce-bb2295da779f
+md"""
+## Profiling warnings
+
+The colors in the flame graph have special meaning:
+- blue $\implies$ everything is fine
+- yellow $\implies$ "garbage collection" (a sign of excessive allocations)
+- red $\implies$ "runtime dispatch" (a sign of bad type inference).
+
+Which brings us to the main principles of high-performance Julia code:
+
+!!! danger "How to write efficient Julia"
+	1. Reduce memory allocations
+	2. Facilitate type inference
+"""
+
+# ╔═╡ 7122231c-3bbc-4815-811c-dfa3464af1a6
+md"""
+## Memory diagnosis
+
+Julia 1.8 (which is still a [beta release](https://discourse.julialang.org/t/julia-v1-8-0-beta3-and-v1-6-6-lts-are-now-available/78820)) introduced many novelties.
+Among them is a built-in memory profiler, which mimics the behavior of the temporal profiler shown above.
+It is still a bit [hard to use](https://github.com/JuliaLang/julia/issues/45268) but it can help identify which lines of code are responsible for the most allocations.
+"""
+
+# ╔═╡ 9ca598c1-dae8-40b9-a18d-c74f30524b35
+md"""
+## Type inference diagnosis
+
+The built-in macro [`@code_warntype`](https://docs.julialang.org/en/v1/manual/performance-tips/#man-code-warntype) shows the result of type inference on a function call.
+Non-concrete types are displayed in red: they are those for which inference failed.
+
+Sometimes `@code_warntype` is not enough, because it only studies the outermost function and doesn't dive deeper into the call stack. This is what the macro `@report_opt` from [JET.jl](https://github.com/aviatesk/JET.jl) is for.
+"""
+
 # ╔═╡ 0fb6ed33-601c-4392-b7d9-32230c979d39
 md"""
-# Improving code performance
+# Performance tips
 
-Once we know which parts of our code take the most time, we can try to optimize them. The primary source for this section is the Julia language manual, more specifically its [performance tips](https://docs.julialang.org/en/v1/manual/performance-tips/), but I also used some other inspirations (by increasing order of complexity):
-- [Julia for Data Science - performance tips](https://www.juliafordatascience.com/performance-tips/).
-- [7 Julia gotchas and how to handle them](https://www.stochasticlifestyle.com/7-julia-gotchas-handle/)
-- [What scientists must know about hardware to write fast code](https://viralinstruction.com/posts/hardware/)
+We now give more details on the two principles stated above.
+The primary source for this section is the [Julia manual page on performance tips](https://docs.julialang.org/en/v1/manual/performance-tips/), but there are other useful references:
+- [Performance tips](https://www.juliafordatascience.com/performance-tips/) (Josh Day)
+- [Optimizing Julia code](https://huijzer.xyz/posts/inference/) (Rik Huijzer)
+- [7 Julia gotchas and how to handle them](https://www.stochasticlifestyle.com/7-julia-gotchas-handle/) (Chris Rackauckas)
 """
 
 # ╔═╡ a6e9da76-1ff0-4b54-9b55-4856ca32b251
 md"""
 ## General advice
 
-- Loops are often faster than vectorized operations, unlike in Python and R
-- Avoid global variables (or turn them into constants with the keyword `const`)
+- Avoid [global variables](https://docs.julialang.org/en/v1/manual/performance-tips/#Avoid-global-variables), or turn them into constants with the keyword `const`
+- Put critical code [inside functions](https://docs.julialang.org/en/v1/manual/performance-tips/#Performance-critical-code-should-be-inside-a-function)
+- Vectorized operations with the [dot syntax](https://docs.julialang.org/en/v1/manual/functions/#man-vectorized) are not faster than loops (except linear algebra routines)
 """
 
 # ╔═╡ fa483fea-bf9f-4764-8d4f-c6d33e3336fb
 md"""
-### Memory allocations
+## Memory allocations
 
-- Prefer in-place operations
-- Pre-allocate output memory
-- Use views instead of slices (`view(A, :, 1)` instead of `A[:, 1]`) when you need to access sub-arrays without copying their values
+Allocations and garbage collection are often performance bottlenecks. Here are a few ways to avoid them:
+
+- Prefer in-place operations to reuse containers (they name usually [ends with `!`](https://docs.julialang.org/en/v1/manual/style-guide/#bang-convention))
+- [Pre-allocate](https://docs.julialang.org/en/v1/manual/performance-tips/#Pre-allocating-outputs) output memory
+- Use [views instead of slices](https://docs.julialang.org/en/v1/manual/performance-tips/#man-performance-views) when you don't need copies: `view(A, :, 1)` instead of `A[:, 1]`
+- [Combine vectorized operations](https://docs.julialang.org/en/v1/manual/performance-tips/#More-dots:-Fuse-vectorized-operations)
 """
 
 # ╔═╡ d3c1a86c-8c8f-4ad6-ac3c-2ba0f838d139
 md"""
-### Typing
+## Type inference
 
-Julia is fast when it can infer the type of each variable at compiletime (i.e. before runtime): we must help type inference when we can:
-- Avoid using abstract types in strategic places: container initializations, field declarations
-- Write type-stable code (make sure variable types do not change)
-- Use `@code_warntype` or (better yet) [JET.jl](https://github.com/aviatesk/JET.jl) to debug type instabilities
+Julia is fastest when it can infer the type of each variable during just-in-time compilation: then it can decide ahead of runtime (statically) which method to dispatch where.
+When this fails, types have to be inferred at runtime (dynamically), and "runtime dispatch" of methods is much slower.
 
+!!! note "The key to successful type inference"
+	In each function, the types of the inputs (*not their values*) should be enough to deduce the type of every other quantity, especially the output.
+
+Here are a few ways to make this happen.
+
+- Always declare concrete or parametric types (no abstract types) in the following places:
+  - [container initializations](https://docs.julialang.org/en/v1/manual/performance-tips/#man-performance-abstract-container)
+  - [`struct` field values](https://docs.julialang.org/en/v1/manual/performance-tips/#Avoid-fields-with-abstract-type)
+  - [`struct` field containers](https://docs.julialang.org/en/v1/manual/performance-tips/#Avoid-fields-with-abstract-containers)
+- Never write `if typeof(x) == ...`: use [multiple function definitions](https://docs.julialang.org/en/v1/manual/performance-tips/#Break-functions-into-multiple-definitions) instead
+- Define functions that [do not change the type of variables](https://docs.julialang.org/en/v1/manual/performance-tips/#Avoid-changing-the-type-of-a-variable) and [always output the same type](https://docs.julialang.org/en/v1/manual/performance-tips/#Write-%22type-stable%22-functions) 
+"""
+
+# ╔═╡ fdf97758-26c1-4157-a5d1-af89578f6277
+md"""
+## Generic programming
+
+Multiple dispatch allows the right method to be chosen based on the type of every argument (not just the first one).
+This is what makes it possible for multiple packages to work together without knowing about each other... as long as they remain generic.
+In particular, it is not a good idea to overspecify input types: it usually doesn't improve performance, and can prevent unexpected uses of your code.
+This is explained in great detail by the blog post [Type-Dispatch Design: Post Object-Oriented Programming for Julia](https://www.stochasticlifestyle.com/type-dispatch-design-post-object-oriented-programming-julia/).
 """
 
 # ╔═╡ 43bad028-9d16-426f-9cdb-a37b1ee1a623
 md"""
-## Iterative workflow
+# Example 1: matrix multiplication
 
-We now illustrate the typical workflow of performance analysis and improvement.
-Our goal will be to write function that computes the product $C = AB$ of two matrices $A \in \mathbb{R}^{m \times n}$ and $B \in \mathbb{R}^{n \times p}$, without using linear algebra routines.
-Starting from a simple implementation, we will enhance it step by step until we are satisfied with its performance.
+We now illustrate a typical workflow of performance analysis and improvement.
+Our goal is to write a function that computes the product $C = AB$ of two matrices $A \in \mathbb{R}^{m \times n}$ and $B \in \mathbb{R}^{n \times p}$, without using linear algebra routines.
+Starting from a simple implementation, we will enhance it step by step until we are satisfied.
 """
 
 # ╔═╡ 857509a7-f07a-4bf0-9383-207984b95faa
 A, B = rand(200, 100), rand(100, 300);
 
+# ╔═╡ d185d84b-a209-48de-ab14-a561e192a92a
+md"""
+This example was only for teaching purposes: of course, you should always use built-in linear algebra routines.
+"""
+
+# ╔═╡ 97a02c97-378e-410f-abea-1f38a158264e
+@benchmark $A * $B
+
 # ╔═╡ 7386749b-b2ab-48a7-a1d2-46e7f31e72e3
 md"""
-### Version 1
+## Version 1
 
-Our first attempt aims at the simplest possible correct code, following the famous mantra
-> Make it work, make it right, make it fast.
+Our first attempt aims at the simplest possible correct code.
 """
 
 # ╔═╡ 6cd86e7a-9f82-4da1-a8f0-4ed2c1068ab9
@@ -186,9 +247,14 @@ end;
 
 # ╔═╡ 382517ac-c4f5-45f1-bfe6-120e06c97b1c
 md"""
-There are two reasons we test our function right after defining it:
-1. to ensure correctness
+There are two reasons why we test our function right after defining it:
+1. to ensure correctness of the result
 2. to get the compilation time of the first run out of the way, so it does not bias our analysis.
+"""
+
+# ╔═╡ 40ae6013-7b0e-48c6-a498-7a7f7417d984
+md"""
+## Version 1 - analysis
 """
 
 # ╔═╡ 5d10a00b-bfa9-49c7-9f4b-503351fa2842
@@ -209,12 +275,12 @@ This is caused by unnecessary allocations: when we do
 ```julia
 C[i,j] = sum(A[i, :] .* B[:, j])
 ```
-we create one copy of the row `A[i, :]`, one copy of the column `B[:, j]`, and a whole new vector to store their componentwise product.
+we create one copy of the row `A[i, :]`, one copy of the column `B[:, j]`, and a whole new vector to store their componentwise product before summing over it.
 """
 
 # ╔═╡ fe45168c-8cf1-435e-86fc-16cfffef3ec1
 md"""
-### Version 2
+## Version 2
 
 Our second version remedies this problem by computing the dot product manually.
 """
@@ -235,12 +301,17 @@ begin
 	@assert matmul2(A, B) ≈ A * B 
 end;
 
+# ╔═╡ c131c6bf-50ff-4224-a9cb-9f1238b03311
+md"""
+## Version 2 - analysis
+"""
+
 # ╔═╡ cd0cc22f-2d4d-4848-8f15-8f0127a4245b
 @benchmark matmul2($A, $B)
 
 # ╔═╡ 638de554-1bec-453d-9e30-796247aaa4cc
 md"""
-The running time is already improved: can we do even better?
+The running time has decreased, and so has the allocated memory. Can we do even better?
 """
 
 # ╔═╡ fd4401cf-69e8-4444-92c3-478035301006
@@ -248,12 +319,12 @@ The running time is already improved: can we do even better?
 
 # ╔═╡ 23053665-e058-43de-95d9-c688e3a80b0c
 md"""
-This time we see that the main bottleneck is `setindex!`, which is used to modify components of an array. That is not very satisfying.
+This time we see that the main bottleneck is `setindex!`, which is used to modify components of an array.
 """
 
 # ╔═╡ 9a181530-02e7-47b0-9a86-c191baefac54
 md"""
-### Version 3
+## Version 3
 
 Our third version improves upon the previous one by only updating `C[i,j]` once instead of $n$ times.
 """
@@ -276,6 +347,11 @@ begin
 	@assert matmul3(A, B) ≈ A * B 
 end;
 
+# ╔═╡ 7a881026-5d63-444b-9485-67ac30f84032
+md"""
+## Version 3 - analysis
+"""
+
 # ╔═╡ 610f6d6f-9d37-4f3d-be78-ab9847162f4d
 @benchmark matmul3($A, $B)
 
@@ -289,175 +365,188 @@ Yet another performance gain! How far can we go?
 
 # ╔═╡ bd8ab522-457f-4b9c-86b4-fa39b857ccbd
 md"""
-This last profile is pretty satisfying: most of the time is spent in the iteration and the sum, which is what we would expect. So we will stop there.
+This last profile is pretty satisfying: most of the time is spent in the iteration and the sum, which is what we would expect. Therefore, we will stop there.
 """
 
-# ╔═╡ fe734441-3a46-4b75-aba1-9c3c6519ad64
+# ╔═╡ 69e8bf4e-d98d-4804-b6bf-f299c3452565
 md"""
-Note that this example was only for teaching purposes: of course, you should always use built-in linear algebra routines.
-"""
+# Example 2: point storage
 
-# ╔═╡ 49327d40-31a1-47c8-abc2-4517478ca18f
-@benchmark *($A, $B)
-
-# ╔═╡ b186543b-aae1-4c96-a93d-8507a2a54805
-md"""
-## Other examples
-"""
-
-# ╔═╡ 9d1951b4-2bf3-4dd3-9ee2-ec8bb6b953f3
-md"""
-### Abstract types in containers
-"""
-
-# ╔═╡ 1067868e-2ca8-463f-bc55-c444aaf3b37c
-md"""
-We now illustrate the impact of abstract types within a struct.
+Here we will compare a set of `struct`s that can store a point in 2D space.
+We first define an abstract type (or interface).
 """
 
 # ╔═╡ dacdb662-f46d-4032-a8b8-cdfbaf5317fc
-abstract type Point end
+abstract type AbstractPoint end
+
+# ╔═╡ 253a9547-a2d4-4d17-b3b8-22194233bed3
+md"""
+To compute the norm of an `AbstractPoint`, we assume that all concrete subtypes will have fields called `x` and `y`.
+"""
+
+# ╔═╡ 8178e06d-0632-4600-803a-09ed96816f61
+mysqnorm(p::AbstractPoint) = p.x^2 + p.y^2
+
+# ╔═╡ 3f9a432e-bab3-4357-b834-a2aaebe9fe31
+md"""
+## Version 1
+"""
+
+# ╔═╡ 36f104eb-cef3-481e-8283-2ecaf16c058f
+md"""
+A `struct` written by a Julia beginner will often look somewhat like this.
+"""
 
 # ╔═╡ 22b04135-f762-4331-8091-c8c3fa46655f
-struct StupidPoint <: Point
-    x::Real
-    y::Real
+struct StupidPoint <: AbstractPoint
+    x
+    y
 end
 
+# ╔═╡ 3683d09a-7799-4bef-9d59-93f7fdb767a5
+p_stupid = StupidPoint(3., 5.)
+
+# ╔═╡ 9757e3ab-ecff-49e4-8fd9-44633e49b95c
+@benchmark mysqnorm($p_stupid)
+
+# ╔═╡ 41ee35ee-7ff6-4562-bae3-8708dc330df1
+md"""
+## Version 1 - analysis
+"""
+
+# ╔═╡ 0ed838d3-32bc-4f40-82a7-066d50746f51
+md"""
+The norm computation shouldn't be so slow. This time, instead of profiling, let us use type analysis.
+"""
+
+# ╔═╡ 9063e65e-15ef-420a-94a4-28a0b1f5335b
+with_terminal() do
+	@code_warntype mysqnorm(p_stupid)
+end
+
+# ╔═╡ d35a4f16-b5d4-4827-9b45-dbe28c9c4ff0
+md"""
+We see many red annotations, meaning that the types of several intermediate variables cannot be inferred.
+For instance, the line
+```
+%1  = Base.getproperty(p, :x)::Any
+```
+means that the field `p.x` has a type that cannot be determined during compilation alone.
+More problematically, the line
+```
+Body::Any
+```
+states that the return type of the method is itself unknown. This means that type uncertainties may propagate if `mysqnorm(p_stupid)` is part of a larger code.
+"""
+
+# ╔═╡ 848fefa1-824b-4076-8149-b3a8869c172a
+ @report_opt mysqnorm(p_stupid)
+
+# ╔═╡ 23c83abe-0904-4faf-b5c7-e6f04b30da71
+md"""
+This is confirmed by the report of JET.jl, which detects several occurrences of runtime dispatch.
+"""
+
+# ╔═╡ 0a1dd5c2-d164-4b88-aa5d-a73ede91c56c
+md"""
+## Version 2
+"""
+
+# ╔═╡ 11043a57-da51-4d84-a6e9-645650e88840
+md"""
+The natural way to fix our first version would be to impose concrete types on both fields.
+"""
+
 # ╔═╡ 40d777cc-7cf0-44f7-b179-fe3abbf4e030
-struct CleverPoint <: Point
+struct CleverPoint <: AbstractPoint
     x::Float64
     y::Float64
 end
 
+# ╔═╡ 8b1b31e8-1f7c-427c-b69b-9fa5d4f654cc
+p_clever = CleverPoint(3., 5.)
+
+# ╔═╡ a13f3093-a2a7-441f-acaf-c4b9b099024c
+@benchmark mysqnorm($p_clever)
+
+# ╔═╡ 9f14261e-6bb9-4426-ae99-26fa35e531c1
+md"""
+## Version 2 - analysis
+
+As we can see, performance has greatly improved, because the method can be fully inferred. 
+"""
+
+# ╔═╡ 5970836a-5f14-446d-b05f-5beec9b05f8a
+with_terminal() do
+	@code_warntype mysqnorm(p_clever)
+end
+
+# ╔═╡ 7d487376-9651-45c6-bc8a-21117af8e745
+ @report_opt mysqnorm(p_clever)
+
+# ╔═╡ 5b5b3949-2a82-415a-8e2d-6b497c257a3f
+md"""
+But what our points have other coordinate types? Maybe we don't want to convert them to `Float64` by default?
+"""
+
+# ╔═╡ bd06e581-1757-43f2-bdef-0fe4c8f9d238
+md"""
+## Version 3
+"""
+
+# ╔═╡ 00bc35dc-202b-42bf-9c97-28faa0c42e73
+md"""
+The most generic way to encode a point with real coordinates is to use a [parametric type](https://docs.julialang.org/en/v1/manual/types/#Parametric-Types).
+"""
+
 # ╔═╡ bb734c3b-d981-4473-aa04-9262206ee746
-struct GeniusPoint{CoordType <: Real} <: Point
-    x::CoordType
-    y::CoordType
+struct GeniusPoint{R <: Real} <: AbstractPoint
+    x::R
+    y::R
 end
 
-# ╔═╡ 758b6eb0-f61d-4772-a270-f55fac65d56a
-norm(p::Point) = sqrt(p.x^2 + p.y^2)
+# ╔═╡ 1756c3bc-8662-4f76-bc6a-1b7448b36913
+p_genius = GeniusPoint(3., 5.)
 
-# ╔═╡ 262f7aa1-5072-4376-92db-4241370ec303
-begin
-	p_stupid = StupidPoint(1., 2.)
-	p_clever = CleverPoint(1., 2.)
-	p_genius = GeniusPoint(1., 2.)
-end
+# ╔═╡ 008dcb2f-d32b-425d-bc7c-55b512d53b8a
+@benchmark mysqnorm($p_genius)
 
-# ╔═╡ f352b77a-4e83-4c84-bdcb-9d024b25673f
-norm(p_stupid); @benchmark norm($p_stupid)
-
-# ╔═╡ 9ce1abc9-5377-4fba-a059-3596cbdd3bcd
-norm(p_clever); @benchmark norm($p_clever)
-
-# ╔═╡ 44967cf2-8aff-4b85-aa4a-5833b9b29ab5
-norm(p_genius); @benchmark norm($p_genius)
-
-# ╔═╡ c1310939-87c2-405f-94d6-c7d1310ff700
+# ╔═╡ f08f0153-e8c0-4ece-8cb6-5083539fb36c
 md"""
-We see that the last two implementations are almost two orders of magnitude faster, because they tell the compiler what to expect in terms of attribute types. Note that a `GeniusPoint` can have coordinates of any `Real` type, just like a `StupidPoint`, but the parametric typing makes inference easier.
+## Version 3 - analysis
+
+`GeniusPoint` is just as fast as `CleverPoint` when applied to coordinates of type `Float64`. However, the former can adapt to any coordinate type, which is often useful, for instance in (forward-mode) automatic differentiation.
+This is an instance of generic programming, as mentioned above.
 """
 
-# ╔═╡ 1500ca48-f99c-4ea0-beb7-bcadedf11d23
-with_terminal() do
-	@code_warntype norm(p_genius)
-end
+# ╔═╡ 8eadd2ef-cfb4-4a53-b3e8-5bf331d51933
+mysqsum_genius(a) = mysqnorm(GeniusPoint(a[1], a[2]))
 
-# ╔═╡ 99df78f5-61ac-49b3-b5ad-5fe5cdeffec5
-with_terminal() do
-	@code_warntype norm(p_stupid)
-end
+# ╔═╡ f34276f4-b267-4369-8563-1e1abe363a5f
+ForwardDiff.gradient(mysqsum_genius, [3., 5.])
 
-# ╔═╡ 26c9d3a2-a54a-43d7-897e-64c34eeac81f
+# ╔═╡ efd5cf6a-68e3-44b3-9b6f-eae396901e4e
 md"""
-In the output of `@code_warntype`, the red annotations indicate types that could not be inferred with sufficient precision. Note that this only works for simple code: if you need to analyse nested functions, you will be better off with the macro `@report_opt` from JET.jl, which works in a similar way.
+We can compare this behavior with that of `CleverPoint`, for which the `Float64` conversion causes problems.
 """
 
-# ╔═╡ b1d31667-46c8-406a-8d25-19802181f37f
-@report_opt norm(p_stupid)
+# ╔═╡ 5c3eb0ba-dfef-4faa-87c5-009317b6faaa
+mysqsum_clever(a) = mysqnorm(CleverPoint(a[1], a[2]))
 
-# ╔═╡ 44f17b4d-c498-4126-9647-4eceaa4a3f21
-@report_opt norm(p_genius)
-
-# ╔═╡ 5aee27ef-c3cf-43b0-b1fd-e058e90bf112
-md"""
-### Type instabilities
-"""
-
-# ╔═╡ e7c68548-a654-40dd-9b3a-10ce24b6cd5c
-md"""
-We now demonstrate the impact of type instabilities in functions.
-"""
-
-# ╔═╡ 735121ed-1563-4d1b-b5c2-f0c4d80e17a1
-with_terminal() do
-	@code_warntype matmul1(A, B)
-end
-
-# ╔═╡ b47ab7f4-82af-4f09-851e-2352093a0b71
-function randsum_unstable(n)
-    x = 1
-    for i = 1:n
-        x += rand()
-    end
-    return x
-end
-
-# ╔═╡ 21e5063b-3d55-4a25-88bb-1dc02322828b
-function randsum_stable(n)
-    x = 1.0
-    for i = 1:n
-        x += rand()
-    end
-    return x
-end
-
-# ╔═╡ 72421355-fac2-4c68-b9a3-f2c49a02c986
-@benchmark randsum_unstable(100)
-
-# ╔═╡ 908796b8-5880-4cbf-9102-92cbd39cae49
-@benchmark randsum_stable(100)
-
-# ╔═╡ 769a8892-1f5a-49ea-947d-dbef2262fd6e
-md"""
-In the unstable version, the variable `x` starts as an `Int` but becomes a `Float64` in the second loop iteration, which makes the compiler's life harder!
-"""
-
-# ╔═╡ 95e7dfdb-0bc0-4cb1-b4ad-f74b006af66c
-with_terminal() do
-	@code_warntype randsum_stable(1)
-end
-
-# ╔═╡ 48ae2243-bf72-4e2f-af0a-17bc377b44e4
-with_terminal() do
-	@code_warntype randsum_unstable(1)
-end
-
-# ╔═╡ b3be8a6e-c00f-413f-858e-aee32f32dd18
-md"""
-This time, JET.jl would not have caught it, probably since it considers a union type `Union{Float64, Int64}` to be successfully inferred, even though it hurts performance.
-"""
-
-# ╔═╡ 2b0f6c30-112e-45bc-a3ea-3da4012922a9
- @report_opt randsum_unstable(1)
-
-# ╔═╡ 5d07342c-d4b4-4f3b-b523-514c0f252813
-@report_opt randsum_stable(1)
+# ╔═╡ 237eb08b-e286-42da-94cd-51a591c7e91d
+ForwardDiff.gradient(mysqsum_clever, [3., 5.])
 
 # ╔═╡ fe04e854-1393-42fc-b6d7-6a4b3848e0ef
 md"""
 # Going further
 """
 
-# ╔═╡ bc1695e8-12c2-4630-a630-a12c53943eb8
+# ╔═╡ 6437292a-2922-4219-a5e9-b7c8e2db20c7
 md"""
-## Memory profiling
+## Hardware issues
 
-Julia 1.8 (which is still a [beta release](https://discourse.julialang.org/t/julia-v1-8-0-beta3-and-v1-6-6-lts-are-now-available/78820)) introduced many novelties.
-One of the most significant is a built-in memory profiler, which mimics the behavior of the temporal profiler shown above.
-It is still a bit [hard to use](https://github.com/JuliaLang/julia/issues/45268) but it can help diagnose which lines of code are responsible for the most allocations.
+In order to optimize Julia code to the limit, it quickly becomes useful to know how a modern computer works.
+The following blog post is an absolute masterpiece on this aspect: [What scientists must know about hardware to write fast code](https://viralinstruction.com/posts/hardware/)
 """
 
 # ╔═╡ ada6d5f4-f5fc-4c5f-9724-d29f4bb2a06a
@@ -473,17 +562,6 @@ As a package developer, there are many resources available to help you address t
   - [Profiling type inference](https://julialang.org/blog/2021/01/snoopi_deep/)
 """
 
-# ╔═╡ fdf97758-26c1-4157-a5d1-af89578f6277
-md"""
-## Generic programming
-
-The key feature of Julia is multiple dispatch, which allows the right method to be chosen based on argument types. This is what makes it possible for multiple packages to work together seamlessly, but to achieve that we must remain as generic as possible:
-- Do not overspecify input types
-- Write smaller dispatchable functions instead of `if - else` blocks
-
-This is explained in great detail by the blog post [Type-Dispatch Design: Post Object-Oriented Programming for Julia](https://www.stochasticlifestyle.com/type-dispatch-design-post-object-oriented-programming-julia/).
-"""
-
 # ╔═╡ 22d2d50e-8be2-4e1d-a1f7-8fd8d62b4a47
 
 
@@ -491,6 +569,7 @@ This is explained in great detail by the blog post [Type-Dispatch Design: Post O
 PLUTO_PROJECT_TOML_CONTENTS = """
 [deps]
 BenchmarkTools = "6e4b80f9-dd63-53aa-95a3-0cdb28fa8baf"
+ForwardDiff = "f6369f11-7733-5829-9624-2563aa707210"
 JET = "c3a54625-cd67-489e-a8e7-0a5a0ff4e31b"
 PlutoProfile = "ee419aa8-929d-45cd-acf6-76bd043cd7ba"
 PlutoUI = "7f904dfe-b85e-4ff6-b463-dae2292396a8"
@@ -500,6 +579,7 @@ ProgressLogging = "33c8b6b6-d38a-422a-b730-caa89a2f386c"
 
 [compat]
 BenchmarkTools = "~1.3.1"
+ForwardDiff = "~0.10.28"
 JET = "~0.5.14"
 PlutoProfile = "~0.3.0"
 PlutoUI = "~0.7.38"
@@ -540,6 +620,18 @@ git-tree-sha1 = "4c10eee4af024676200bc7752e536f858c6b8f93"
 uuid = "6e4b80f9-dd63-53aa-95a3-0cdb28fa8baf"
 version = "1.3.1"
 
+[[deps.ChainRulesCore]]
+deps = ["Compat", "LinearAlgebra", "SparseArrays"]
+git-tree-sha1 = "9950387274246d08af38f6eef8cb5480862a435f"
+uuid = "d360d2e6-b24c-11e9-a2a3-2a2ae2dbcce4"
+version = "1.14.0"
+
+[[deps.ChangesOfVariables]]
+deps = ["ChainRulesCore", "LinearAlgebra", "Test"]
+git-tree-sha1 = "1e315e3f4b0b7ce40feded39c73049692126cf53"
+uuid = "9e997f8a-9a97-42d5-a9f1-ce6bfc15e2c0"
+version = "0.1.3"
+
 [[deps.CodeTracking]]
 deps = ["InteractiveUtils", "UUIDs"]
 git-tree-sha1 = "6d4fa04343a7fc9f9cb9cff9558929f3d2752717"
@@ -557,6 +649,18 @@ deps = ["ColorTypes", "FixedPointNumbers", "Reexport"]
 git-tree-sha1 = "417b0ed7b8b838aa6ca0a87aadf1bb9eb111ce40"
 uuid = "5ae59095-9a9b-59fe-a467-6f913c188581"
 version = "0.12.8"
+
+[[deps.CommonSubexpressions]]
+deps = ["MacroTools", "Test"]
+git-tree-sha1 = "7b8a93dba8af7e3b42fecabf646260105ac373f7"
+uuid = "bbf7d656-a473-5ed7-a52c-81e309532950"
+version = "0.3.0"
+
+[[deps.Compat]]
+deps = ["Base64", "Dates", "DelimitedFiles", "Distributed", "InteractiveUtils", "LibGit2", "Libdl", "LinearAlgebra", "Markdown", "Mmap", "Pkg", "Printf", "REPL", "Random", "SHA", "Serialization", "SharedArrays", "Sockets", "SparseArrays", "Statistics", "Test", "UUIDs", "Unicode"]
+git-tree-sha1 = "b153278a25dd42c65abbf4e62344f9d22e59191b"
+uuid = "34da2185-b29b-5c13-b0c7-acf172513d20"
+version = "3.43.0"
 
 [[deps.CompilerSupportLibraries_jll]]
 deps = ["Artifacts", "Libdl"]
@@ -582,9 +686,31 @@ version = "1.0.0"
 deps = ["Printf"]
 uuid = "ade2ca70-3891-5945-98fb-dc099432e06a"
 
+[[deps.DelimitedFiles]]
+deps = ["Mmap"]
+uuid = "8bb1440f-4735-579b-a4ab-409b98df4dab"
+
+[[deps.DiffResults]]
+deps = ["StaticArrays"]
+git-tree-sha1 = "c18e98cba888c6c25d1c3b048e4b3380ca956805"
+uuid = "163ba53b-c6d8-5494-b064-1a9d43ac40c5"
+version = "1.0.3"
+
+[[deps.DiffRules]]
+deps = ["IrrationalConstants", "LogExpFunctions", "NaNMath", "Random", "SpecialFunctions"]
+git-tree-sha1 = "28d605d9a0ac17118fe2c5e9ce0fbb76c3ceb120"
+uuid = "b552c78f-8df3-52c6-915a-8e097449b14b"
+version = "1.11.0"
+
 [[deps.Distributed]]
 deps = ["Random", "Serialization", "Sockets"]
 uuid = "8ba89e20-285c-5b6f-9357-94700520ee1b"
+
+[[deps.DocStringExtensions]]
+deps = ["LibGit2"]
+git-tree-sha1 = "b19534d1895d702889b219c382a6e18010797f0b"
+uuid = "ffbed154-4ef7-542d-bbb7-c09d3a79fcae"
+version = "0.8.6"
 
 [[deps.Downloads]]
 deps = ["ArgTools", "LibCURL", "NetworkOptions"]
@@ -615,6 +741,12 @@ deps = ["AbstractTrees", "Colors", "FileIO", "FixedPointNumbers", "IndirectArray
 git-tree-sha1 = "d9eee53657f6a13ee51120337f98684c9c702264"
 uuid = "08572546-2f56-4bcf-ba4e-bab62c3a3f89"
 version = "0.2.10"
+
+[[deps.ForwardDiff]]
+deps = ["CommonSubexpressions", "DiffResults", "DiffRules", "LinearAlgebra", "LogExpFunctions", "NaNMath", "Preferences", "Printf", "Random", "SpecialFunctions", "StaticArrays"]
+git-tree-sha1 = "7a380de46b0a1db85c59ebbce5788412a39e4cb7"
+uuid = "f6369f11-7733-5829-9624-2563aa707210"
+version = "0.10.28"
 
 [[deps.FuzzyCompletions]]
 deps = ["REPL"]
@@ -660,6 +792,17 @@ version = "0.5.1"
 deps = ["Markdown"]
 uuid = "b77e0a4c-d291-57a0-90e8-8db25a27a240"
 
+[[deps.InverseFunctions]]
+deps = ["Test"]
+git-tree-sha1 = "336cc738f03e069ef2cac55a104eb823455dca75"
+uuid = "3587e190-3f89-42d0-90ee-14403ec27112"
+version = "0.1.4"
+
+[[deps.IrrationalConstants]]
+git-tree-sha1 = "7fd44fd4ff43fc60815f8e764c0f352b83c49151"
+uuid = "92d709cd-6900-40b7-9082-c6be49f344b6"
+version = "0.1.1"
+
 [[deps.IteratorInterfaceExtensions]]
 git-tree-sha1 = "a3f24677c21f5bbe9d2a714f95dcd58337fb2856"
 uuid = "82899510-4779-5014-852e-03e436cf321d"
@@ -670,6 +813,12 @@ deps = ["InteractiveUtils", "JuliaInterpreter", "LoweredCodeUtils", "MacroTools"
 git-tree-sha1 = "db7e3490a86714a183d5b11576f25340160783ff"
 uuid = "c3a54625-cd67-489e-a8e7-0a5a0ff4e31b"
 version = "0.5.14"
+
+[[deps.JLLWrappers]]
+deps = ["Preferences"]
+git-tree-sha1 = "abc9885a7ca2052a736a600f7fa66209f96506e1"
+uuid = "692b3bcd-3c85-4b1f-b108-f13ce0eb3210"
+version = "1.4.1"
 
 [[deps.JSON]]
 deps = ["Dates", "Mmap", "Parsers", "Unicode"]
@@ -712,6 +861,12 @@ uuid = "8f399da3-3557-5675-b5ff-fb832c97cbdb"
 deps = ["Libdl", "libblastrampoline_jll"]
 uuid = "37e2e46d-f89d-539d-b4ee-838fcccc9c8e"
 
+[[deps.LogExpFunctions]]
+deps = ["ChainRulesCore", "ChangesOfVariables", "DocStringExtensions", "InverseFunctions", "IrrationalConstants", "LinearAlgebra"]
+git-tree-sha1 = "09e4b894ce6a976c354a69041a04748180d43637"
+uuid = "2ab3a3ac-af41-5b50-aa03-7779005ae688"
+version = "0.3.15"
+
 [[deps.Logging]]
 uuid = "56ddb016-857b-54e1-b83d-db4d58db5568"
 
@@ -753,12 +908,27 @@ git-tree-sha1 = "a8cbf066b54d793b9a48c5daa5d586cf2b5bd43d"
 uuid = "99f44e22-a591-53d1-9472-aa23ef4bd671"
 version = "1.1.0"
 
+[[deps.NaNMath]]
+git-tree-sha1 = "737a5957f387b17e74d4ad2f440eb330b39a62c5"
+uuid = "77ba4419-2d1f-58cd-9bb1-8ffee604a2e3"
+version = "1.0.0"
+
 [[deps.NetworkOptions]]
 uuid = "ca575930-c2e3-43a9-ace4-1e988b2c1908"
 
 [[deps.OpenBLAS_jll]]
 deps = ["Artifacts", "CompilerSupportLibraries_jll", "Libdl"]
 uuid = "4536629a-c528-5b80-bd46-f80d51c5b363"
+
+[[deps.OpenLibm_jll]]
+deps = ["Artifacts", "Libdl"]
+uuid = "05823500-19ac-5b8b-9628-191a04bc5112"
+
+[[deps.OpenSpecFun_jll]]
+deps = ["Artifacts", "CompilerSupportLibraries_jll", "JLLWrappers", "Libdl", "Pkg"]
+git-tree-sha1 = "13652491f6856acfd2db29360e1bbcd4565d04f1"
+uuid = "efe28fd5-8261-553b-a9e1-b2916fc3738e"
+version = "0.5.5+0"
 
 [[deps.OrderedCollections]]
 git-tree-sha1 = "85f8e6578bf1f9ee0d11e7bb1b1456435479d47c"
@@ -792,6 +962,12 @@ deps = ["AbstractPlutoDingetjes", "Base64", "ColorTypes", "Dates", "Hyperscript"
 git-tree-sha1 = "670e559e5c8e191ded66fa9ea89c97f10376bb4c"
 uuid = "7f904dfe-b85e-4ff6-b463-dae2292396a8"
 version = "0.7.38"
+
+[[deps.Preferences]]
+deps = ["TOML"]
+git-tree-sha1 = "47e5f437cc0e7ef2ce8406ce1e7e24d44915f88d"
+uuid = "21216c6a-2e73-6563-6e65-726566657250"
+version = "1.3.0"
 
 [[deps.Printf]]
 deps = ["Unicode"]
@@ -856,12 +1032,28 @@ version = "1.1.0"
 [[deps.Serialization]]
 uuid = "9e88b42a-f829-5b0c-bbe9-9e923198166b"
 
+[[deps.SharedArrays]]
+deps = ["Distributed", "Mmap", "Random", "Serialization"]
+uuid = "1a1011a3-84de-559e-8e89-a11a2f7dc383"
+
 [[deps.Sockets]]
 uuid = "6462fe0b-24de-5631-8697-dd941f90decc"
 
 [[deps.SparseArrays]]
 deps = ["LinearAlgebra", "Random"]
 uuid = "2f01184e-e22b-5df5-ae63-d93ebab69eaf"
+
+[[deps.SpecialFunctions]]
+deps = ["ChainRulesCore", "IrrationalConstants", "LogExpFunctions", "OpenLibm_jll", "OpenSpecFun_jll"]
+git-tree-sha1 = "5ba658aeecaaf96923dce0da9e703bd1fe7666f9"
+uuid = "276daf66-3868-5448-9aa4-cd146d93841b"
+version = "2.1.4"
+
+[[deps.StaticArrays]]
+deps = ["LinearAlgebra", "Random", "Statistics"]
+git-tree-sha1 = "cd56bf18ed715e8b09f06ef8c6b781e6cdc49911"
+uuid = "90137ffa-7385-5640-81b9-e52037218182"
+version = "1.4.4"
 
 [[deps.Statistics]]
 deps = ["LinearAlgebra", "SparseArrays"]
@@ -927,9 +1119,10 @@ uuid = "3f19e933-33d8-53b3-aaab-bd5110c3b7a0"
 
 # ╔═╡ Cell order:
 # ╠═f5231f65-da94-4ed3-af65-857edb42ee08
+# ╠═a775f1d4-4d3e-467e-8c8f-13f90ccbede4
 # ╠═5de2a556-f3af-4a64-a5c6-32d30f758be3
-# ╟─e1852c8d-4028-409e-8e1a-8253bbd6e6a5
 # ╠═1ac5ba38-0eef-41bb-8f9c-3bbf057cae21
+# ╟─e1852c8d-4028-409e-8e1a-8253bbd6e6a5
 # ╟─9331fad2-f29e-11eb-0349-477bd2e7e412
 # ╟─3d98e7db-c643-4500-987d-4a225e55b2a5
 # ╠═b4f2a99e-de45-49d2-be86-9f2d03357462
@@ -942,70 +1135,79 @@ uuid = "3f19e933-33d8-53b3-aaab-bd5110c3b7a0"
 # ╟─c0a7c1fe-457f-4e52-b0ea-2821e40817ea
 # ╠═834f6172-15bc-4e7d-ae22-e18ef2e8e22b
 # ╟─94c78148-c651-4a59-9e62-5c7e9576d1e8
-# ╟─c42e3aa8-48c7-4bb1-bb35-2301476e085b
 # ╠═c44f3dc9-ff19-4ba4-9388-73cfaf23f8e8
+# ╟─a7de0ec9-6b01-4b42-8cce-bb2295da779f
+# ╟─7122231c-3bbc-4815-811c-dfa3464af1a6
+# ╟─9ca598c1-dae8-40b9-a18d-c74f30524b35
 # ╟─0fb6ed33-601c-4392-b7d9-32230c979d39
 # ╟─a6e9da76-1ff0-4b54-9b55-4856ca32b251
 # ╟─fa483fea-bf9f-4764-8d4f-c6d33e3336fb
 # ╟─d3c1a86c-8c8f-4ad6-ac3c-2ba0f838d139
+# ╟─fdf97758-26c1-4157-a5d1-af89578f6277
 # ╟─43bad028-9d16-426f-9cdb-a37b1ee1a623
 # ╠═857509a7-f07a-4bf0-9383-207984b95faa
+# ╠═d185d84b-a209-48de-ab14-a561e192a92a
+# ╠═97a02c97-378e-410f-abea-1f38a158264e
 # ╟─7386749b-b2ab-48a7-a1d2-46e7f31e72e3
 # ╠═6cd86e7a-9f82-4da1-a8f0-4ed2c1068ab9
 # ╟─382517ac-c4f5-45f1-bfe6-120e06c97b1c
+# ╟─40ae6013-7b0e-48c6-a498-7a7f7417d984
 # ╠═5d10a00b-bfa9-49c7-9f4b-503351fa2842
 # ╟─38cc6383-c7d8-46b4-8531-251bd196d960
 # ╠═62163e17-4265-4c97-95bb-29d608e80b07
 # ╟─9d8b7e25-c9c6-4aba-a33c-66fd18d804c0
 # ╟─fe45168c-8cf1-435e-86fc-16cfffef3ec1
 # ╠═0400175c-5a3c-44a7-9a8a-c30a4756b88c
+# ╟─c131c6bf-50ff-4224-a9cb-9f1238b03311
 # ╠═cd0cc22f-2d4d-4848-8f15-8f0127a4245b
 # ╟─638de554-1bec-453d-9e30-796247aaa4cc
 # ╠═fd4401cf-69e8-4444-92c3-478035301006
 # ╟─23053665-e058-43de-95d9-c688e3a80b0c
 # ╟─9a181530-02e7-47b0-9a86-c191baefac54
 # ╠═159c8baa-fa34-4e9d-af09-774c625194fa
+# ╟─7a881026-5d63-444b-9485-67ac30f84032
 # ╠═610f6d6f-9d37-4f3d-be78-ab9847162f4d
 # ╟─c7b551a0-8c2e-4785-b575-8d58e37c14ec
 # ╠═2fabb4c0-5861-45f6-8972-c29e55804ca8
 # ╟─bd8ab522-457f-4b9c-86b4-fa39b857ccbd
-# ╟─fe734441-3a46-4b75-aba1-9c3c6519ad64
-# ╠═49327d40-31a1-47c8-abc2-4517478ca18f
-# ╟─b186543b-aae1-4c96-a93d-8507a2a54805
-# ╟─9d1951b4-2bf3-4dd3-9ee2-ec8bb6b953f3
-# ╟─1067868e-2ca8-463f-bc55-c444aaf3b37c
+# ╟─69e8bf4e-d98d-4804-b6bf-f299c3452565
 # ╠═dacdb662-f46d-4032-a8b8-cdfbaf5317fc
+# ╟─253a9547-a2d4-4d17-b3b8-22194233bed3
+# ╠═8178e06d-0632-4600-803a-09ed96816f61
+# ╟─3f9a432e-bab3-4357-b834-a2aaebe9fe31
+# ╟─36f104eb-cef3-481e-8283-2ecaf16c058f
 # ╠═22b04135-f762-4331-8091-c8c3fa46655f
+# ╠═3683d09a-7799-4bef-9d59-93f7fdb767a5
+# ╠═9757e3ab-ecff-49e4-8fd9-44633e49b95c
+# ╟─41ee35ee-7ff6-4562-bae3-8708dc330df1
+# ╟─0ed838d3-32bc-4f40-82a7-066d50746f51
+# ╠═9063e65e-15ef-420a-94a4-28a0b1f5335b
+# ╟─d35a4f16-b5d4-4827-9b45-dbe28c9c4ff0
+# ╠═848fefa1-824b-4076-8149-b3a8869c172a
+# ╟─23c83abe-0904-4faf-b5c7-e6f04b30da71
+# ╟─0a1dd5c2-d164-4b88-aa5d-a73ede91c56c
+# ╟─11043a57-da51-4d84-a6e9-645650e88840
 # ╠═40d777cc-7cf0-44f7-b179-fe3abbf4e030
+# ╠═8b1b31e8-1f7c-427c-b69b-9fa5d4f654cc
+# ╠═a13f3093-a2a7-441f-acaf-c4b9b099024c
+# ╟─9f14261e-6bb9-4426-ae99-26fa35e531c1
+# ╠═5970836a-5f14-446d-b05f-5beec9b05f8a
+# ╠═7d487376-9651-45c6-bc8a-21117af8e745
+# ╟─5b5b3949-2a82-415a-8e2d-6b497c257a3f
+# ╟─bd06e581-1757-43f2-bdef-0fe4c8f9d238
+# ╟─00bc35dc-202b-42bf-9c97-28faa0c42e73
 # ╠═bb734c3b-d981-4473-aa04-9262206ee746
-# ╠═758b6eb0-f61d-4772-a270-f55fac65d56a
-# ╠═262f7aa1-5072-4376-92db-4241370ec303
-# ╠═f352b77a-4e83-4c84-bdcb-9d024b25673f
-# ╠═9ce1abc9-5377-4fba-a059-3596cbdd3bcd
-# ╠═44967cf2-8aff-4b85-aa4a-5833b9b29ab5
-# ╟─c1310939-87c2-405f-94d6-c7d1310ff700
-# ╠═1500ca48-f99c-4ea0-beb7-bcadedf11d23
-# ╠═99df78f5-61ac-49b3-b5ad-5fe5cdeffec5
-# ╟─26c9d3a2-a54a-43d7-897e-64c34eeac81f
-# ╠═b1d31667-46c8-406a-8d25-19802181f37f
-# ╠═44f17b4d-c498-4126-9647-4eceaa4a3f21
-# ╟─5aee27ef-c3cf-43b0-b1fd-e058e90bf112
-# ╟─e7c68548-a654-40dd-9b3a-10ce24b6cd5c
-# ╠═735121ed-1563-4d1b-b5c2-f0c4d80e17a1
-# ╠═b47ab7f4-82af-4f09-851e-2352093a0b71
-# ╠═21e5063b-3d55-4a25-88bb-1dc02322828b
-# ╠═72421355-fac2-4c68-b9a3-f2c49a02c986
-# ╠═908796b8-5880-4cbf-9102-92cbd39cae49
-# ╟─769a8892-1f5a-49ea-947d-dbef2262fd6e
-# ╠═95e7dfdb-0bc0-4cb1-b4ad-f74b006af66c
-# ╠═48ae2243-bf72-4e2f-af0a-17bc377b44e4
-# ╟─b3be8a6e-c00f-413f-858e-aee32f32dd18
-# ╠═2b0f6c30-112e-45bc-a3ea-3da4012922a9
-# ╠═5d07342c-d4b4-4f3b-b523-514c0f252813
+# ╠═1756c3bc-8662-4f76-bc6a-1b7448b36913
+# ╠═008dcb2f-d32b-425d-bc7c-55b512d53b8a
+# ╟─f08f0153-e8c0-4ece-8cb6-5083539fb36c
+# ╠═8eadd2ef-cfb4-4a53-b3e8-5bf331d51933
+# ╠═f34276f4-b267-4369-8563-1e1abe363a5f
+# ╟─efd5cf6a-68e3-44b3-9b6f-eae396901e4e
+# ╠═5c3eb0ba-dfef-4faa-87c5-009317b6faaa
+# ╠═237eb08b-e286-42da-94cd-51a591c7e91d
 # ╟─fe04e854-1393-42fc-b6d7-6a4b3848e0ef
-# ╟─bc1695e8-12c2-4630-a630-a12c53943eb8
+# ╟─6437292a-2922-4219-a5e9-b7c8e2db20c7
 # ╟─ada6d5f4-f5fc-4c5f-9724-d29f4bb2a06a
-# ╟─fdf97758-26c1-4157-a5d1-af89578f6277
 # ╠═22d2d50e-8be2-4e1d-a1f7-8fd8d62b4a47
 # ╟─00000000-0000-0000-0000-000000000001
 # ╟─00000000-0000-0000-0000-000000000002
