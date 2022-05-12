@@ -47,9 +47,12 @@ O2
     11ac:       0f 1f 40 00             nopl   0x0(%rax)
 
 
+julia
+code_native
+add42(x) = x+42 en float et int
 
 sum. À votre avis, à quoi va ressembler le plot ?
-discuter caches, code_native
+discuter caches
 
 http://ithare.com/infographics-operation-costs-in-cpu-clock-cycles/
 https://viralinstruction.com/posts/hardware/
