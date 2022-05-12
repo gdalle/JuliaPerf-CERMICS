@@ -47,9 +47,12 @@ O2
     11ac:       0f 1f 40 00             nopl   0x0(%rax)
 
 
+julia
+code_native
+add42(x) = x+42 en float et int
 
 sum. À votre avis, à quoi va ressembler le plot ?
-discuter caches, code_native
+discuter caches
 
 http://ithare.com/infographics-operation-costs-in-cpu-clock-cycles/
 https://viralinstruction.com/posts/hardware/
@@ -59,6 +62,9 @@ rowcol.jl
 matmul.jl
 
 roofline model
+
+comment optimiser matmul : vectorisation + cache
+https://github.com/JuliaLinearAlgebra/Octavian.jl
 
 computing peakflops: 5e10. Processor = 2.3ghz => factor 20. FMA: factor 10. AVX: 4 double à la fois, 2 ops par cycle: factor 8
 
