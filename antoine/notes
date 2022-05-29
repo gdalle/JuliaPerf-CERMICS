@@ -51,11 +51,15 @@ julia
 code_native
 add42(x) = x+42 en float et int
 
+TODO voir l'ordre de la discussion vectorisation / mémoire
+https://stackoverflow.com/questions/72306573/why-does-this-code-execute-more-slowly-after-strength-reducing-multiplications-t
+
 sum. À votre avis, à quoi va ressembler le plot ?
 discuter caches
 
 http://ithare.com/infographics-operation-costs-in-cpu-clock-cycles/
 https://viralinstruction.com/posts/hardware/
+
 
 rowcol.jl
 
