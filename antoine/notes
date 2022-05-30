@@ -50,6 +50,10 @@ O2
 julia
 code_native
 add42(x) = x+42 en float et int
+
+Modèle simpliste de perf : chaque instruction coûte un certain nombre de cycles
+https://www.agner.org/optimize/instruction_tables.pdf
+
 vectorization.jl
 https://stackoverflow.com/questions/72306573/why-does-this-code-execute-more-slowly-after-strength-reducing-multiplications-t
 
