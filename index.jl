@@ -1,21 +1,45 @@
 ### A Pluto.jl notebook ###
-# v0.19.4
+# v0.19.5
 
 using Markdown
 using InteractiveUtils
 
-# ╔═╡ f5231f65-da94-4ed3-af65-857edb42ee08
-begin
-	using BenchmarkTools
-	using ForwardDiff
-	using JET
-	using LoopVectorization
-	using PlutoProfile
-	using PlutoUI
-	using Profile
-	using ProfileCanvas
-	using ProgressLogging
-end
+# ╔═╡ 86e4051d-ede6-4e1d-9676-98d92140cc78
+using BenchmarkTools
+
+# ╔═╡ 27793eba-f876-4e92-849d-945989e39216
+using ForwardDiff
+
+# ╔═╡ ac232fbf-827e-4363-9eac-04885334368a
+using JET
+
+# ╔═╡ 144e4f59-c0d0-4f75-aa49-d05cf781d83e
+using LoopVectorization
+
+# ╔═╡ 6b3592a6-43d0-4ebd-a06d-d325dd66a829
+using PlutoUI
+
+# ╔═╡ 06e6e4b8-31b2-4f9e-9da3-093a030021af
+using ProfileCanvas
+
+# ╔═╡ 22d3e9db-f4ec-4810-b2d5-94bdbf8d52ac
+using ProgressLogging
+
+# ╔═╡ 155a8c77-2837-44ee-9b7a-68d5a89a2fdc
+md"""
+!!! danger "High-performance Julia"
+
+	_by Guillaume Dalle_ ([website](https://gdalle.github.io/))
+
+	This tutorial introduces various tools to analyze and speed up Julia programs.
+"""
+
+# ╔═╡ c48f5b63-48b0-4bb6-997d-7d40745a46fa
+md"""
+To experiment with it, click on `Edit or run this notebook`. You will then have a choice between running the code remotely (on Binder) or locally (after installing Julia and Pluto).
+
+If you're used to Jupyter, you may find Pluto surprising: the cells are not executed in the order in which they appear, but in the _topological order of variable dependencies_. Besides, the output (last expression) of a cell is displayed _above it_ and not below. Read the [FAQ](https://github.com/fonsp/Pluto.jl/wiki) to know more.
+"""
 
 # ╔═╡ 5de2a556-f3af-4a64-a5c6-32d30f758be3
 TableOfContents()
@@ -52,12 +76,14 @@ Julia also has a built-in [logging system](https://docs.julialang.org/en/v1/stdl
 """
 
 # ╔═╡ 7a75c990-46b4-484e-acc4-65e34f41a9f2
-for i in 1:10
+for i in 1:9
 	sleep(0.2)
-	if i % 2 == 0
-		@info "Even integer" i i÷2
+	if i % 3 == 1
+		@info "Good integer" i i%3
+	elseif i % 3 == 2
+		@warn "Okay integer" i i%3
 	else
-		@warn "Odd integer" i i÷2
+		@error "Bad integer" i i%3
 	end
 end
 
@@ -82,56 +108,60 @@ To evaluate the efficiency of a function, we need to know how long it takes and 
 
 # ╔═╡ c0a7c1fe-457f-4e52-b0ea-2821e40817ea
 md"""
-When dealing with short-running functions, we get a more accurate evaluation by running them repeatedly. This is what [BenchmarkTools.jl](https://github.com/JuliaCI/BenchmarkTools.jl) does with the following macros:
+However, the built-in macros have shortcomings: they only run the function once, and their measurements may be biased by the presence of global variables.
+We can get a more accurate evaluation thanks to [BenchmarkTools.jl](https://github.com/JuliaCI/BenchmarkTools.jl):
 
 - `@belapsed` is similar to `@elapsed`
 - `@ballocated` is similar to `@allocated`
 - `@btime` is similar to `@time`
 - `@benchmark` prints a pretty graphical summary of `@btime`
-
-When using them, it is important to [interpolate](https://juliaci.github.io/BenchmarkTools.jl/stable/manual/#Interpolating-values-into-benchmark-expressions) the external (global) variables with a dollar sign to make sure they don't hurt performance.
 """
 
-# ╔═╡ 834f6172-15bc-4e7d-ae22-e18ef2e8e22b
-@btime exp(rand(100, 100));
-
-# ╔═╡ 72a290ea-ddf7-462d-8b37-bf8ab777a449
+# ╔═╡ 4e73e893-31c5-4c34-82da-ddabaa7316a4
 @benchmark exp(rand(100, 100))
+
+# ╔═╡ ddbe8924-756a-46a8-9af1-6df0a21e9057
+md"""
+When using BenchmarkTools.jl, it is important to [interpolate](https://juliaci.github.io/BenchmarkTools.jl/stable/manual/#Interpolating-values-into-benchmark-expressions) any external (especially global) variables with a dollar sign, so that they're evaluated at definition time (see below).
+"""
 
 # ╔═╡ 94c78148-c651-4a59-9e62-5c7e9576d1e8
 md"""
 ## Profiling
 
-Profiling is more precise than benchmarking: it tells you how much time you spend *in each nested function call*.
+Profiling is more precise than benchmarking: it tells you how much time you spend _in each nested function call_.
 Julia provides a sampling-based [profiler](https://docs.julialang.org/en/v1/manual/profile/), but it is hard to use without a good visualization.
-We recommend using the [`@profview` macro](https://www.julia-vscode.org/docs/stable/userguide/profiler/) from the VSCode extension (of which `@plutoprofview` is a custom adaptation). However, there are many other options: see the [FlameGraphs.jl](https://github.com/timholy/FlameGraphs.jl) README for a list.
+We recommend using the [`@profview` macro](https://www.julia-vscode.org/docs/stable/userguide/profiler/) from the VSCode extension (or from [ProfileCanvas.jl](https://github.com/pfitzseb/ProfileCanvas.jl) when you're working on a notebook).
+However, there are many other options: see the [FlameGraphs.jl](https://github.com/timholy/FlameGraphs.jl) README for a list.
 
 A profiling "flame graph" represents the entire call stack (without C routines), with each layer corresponding to a call depth.
-The width of a tile is proportional to its execution time.
-Note that the first few layers are usually boilerplate code, and we need to scroll down to reach user-defined functions.
+The width of a tile is proportional to its execution time, but you can click on it to make it fill the whole window.
+Note that the first few layers are usually boilerplate code, and we need to scroll down to reach user-defined functions, usually below a tile called `eval`.
 """
 
 # ╔═╡ c44f3dc9-ff19-4ba4-9388-73cfaf23f8e8
-@plutoprofview exp(rand(500, 500))
+@profview exp(rand(1000, 1000))
 
 # ╔═╡ a7de0ec9-6b01-4b42-8cce-bb2295da779f
 md"""
-The colors in the flame graph have special meaning:
+The colors in the flame graph have special meanings:
 - blue $\implies$ everything is fine
-- gray $\implies$ compilation overhead from the first function call (you just have to run the profiling step a second time)
-- red $\implies$ "runtime dispatch" flag (a sign of bad type inference, except in the first layers where it is normal)
-- yellow $\implies$ "garbage collection (GC)" flag (a sign of excessive allocations)
+- gray $\implies$ compilation overhead from the first function call (just run the profiling step a second time)
+- red $\implies$ "runtime dispatch" flag, a sign of bad type inference (except in the first layers where it is normal)
+- yellow $\implies$ "garbage collection" (GC) flag, a sign of excessive allocations
 
 The importance of these warnings suggests two basic principles for high-performance Julia:
-1. Facilitate type inference
-2. Reduce memory allocations
+
+!!! warning "How to write efficient Julia code"
+	1. Facilitate type inference
+	2. Reduce memory allocations
 
 We will come back to them in the next section.
 """
 
 # ╔═╡ 9ca598c1-dae8-40b9-a18d-c74f30524b35
 md"""
-## Diagnosis
+## Diagnosing
 
 **Type inference**
 
@@ -142,9 +172,8 @@ Sometimes `@code_warntype` is not enough, because it only studies the outermost 
 
 **Allocations**
 
-Julia 1.8 (which is still a [beta release](https://discourse.julialang.org/t/julia-v1-8-0-beta3-and-v1-6-6-lts-are-now-available/78820)) introduced many novelties.
-Among them is a built-in memory profiler, which mimics the behavior of the temporal profiler shown above.
-It is still a bit [hard to use](https://github.com/JuliaLang/julia/issues/45268) but it can help identify which lines of code are responsible for the most allocations.
+Julia 1.8 (which is still a pre-release) introduced many novelties.
+Among them is a built-in memory profiler, which mimics the behavior of the temporal profiler shown above. We will not demonstrate it here.
 """
 
 # ╔═╡ 0fb6ed33-601c-4392-b7d9-32230c979d39
@@ -155,10 +184,7 @@ Now that we know how to detect bad performance, we will discover how to achieve 
 
 > Premature optimization is the root of all evil. (Donald Knuth)
 
-The primary source for this section is the [Julia manual page on performance tips](https://docs.julialang.org/en/v1/manual/performance-tips/) (read it!), but there are other useful references:
-- [Performance tips](https://www.juliafordatascience.com/performance-tips/) (Josh Day)
-- [Optimizing Julia code](https://huijzer.xyz/posts/inference/) (Rik Huijzer)
-- [7 Julia gotchas and how to handle them](https://www.stochasticlifestyle.com/7-julia-gotchas-handle/) (Chris Rackauckas)
+The primary source for this section is the [Julia manual page on performance tips](https://docs.julialang.org/en/v1/manual/performance-tips/) (read it!).
 """
 
 # ╔═╡ a6e9da76-1ff0-4b54-9b55-4856ca32b251
@@ -168,17 +194,7 @@ md"""
 - Avoid [global variables](https://docs.julialang.org/en/v1/manual/performance-tips/#Avoid-global-variables), or turn them into constants with the keyword `const`
 - Put critical code [inside functions](https://docs.julialang.org/en/v1/manual/performance-tips/#Performance-critical-code-should-be-inside-a-function)
 - Vectorized operations (using the [dot syntax](https://docs.julialang.org/en/v1/manual/functions/#man-vectorized)) are not faster than loops, except linear algebra routines
-"""
-
-# ╔═╡ b061acb9-16f1-4b2b-8a07-f94d4282018f
-md"""
-## The 2 principles
-
-Let us recall and insist on the two principles we discovered above.
-
-!!! danger "How to write efficient Julia code"
-	1. Facilitate type inference
-	2. Reduce memory allocations
+- Beware of [closures](https://docs.julialang.org/en/v1/manual/performance-tips/#man-performance-captured) (i.e. functions that return functions)
 """
 
 # ╔═╡ d3c1a86c-8c8f-4ad6-ac3c-2ba0f838d139
@@ -197,8 +213,8 @@ Here are a few ways to make this happen.
   - [container initializations](https://docs.julialang.org/en/v1/manual/performance-tips/#man-performance-abstract-container)
   - [`struct` field values](https://docs.julialang.org/en/v1/manual/performance-tips/#Avoid-fields-with-abstract-type)
   - [`struct` field containers](https://docs.julialang.org/en/v1/manual/performance-tips/#Avoid-fields-with-abstract-containers)
-- Never write `if typeof(x) == ...`: exploit [multiple dispatch](https://docs.julialang.org/en/v1/manual/performance-tips/#Break-functions-into-multiple-definitions) of [function barriers](https://docs.julialang.org/en/v1/manual/performance-tips/#kernel-functions) instead
-- Define functions that [do not change the type of variables](https://docs.julialang.org/en/v1/manual/performance-tips/#Avoid-changing-the-type-of-a-variable) and [always output the same type](https://docs.julialang.org/en/v1/manual/performance-tips/#Write-%22type-stable%22-functions) 
+- Never write `if typeof(x) == ...`: exploit [multiple dispatch](https://docs.julialang.org/en/v1/manual/performance-tips/#Break-functions-into-multiple-definitions) or [function barriers](https://docs.julialang.org/en/v1/manual/performance-tips/#kernel-functions) instead
+- Define functions that [do not change the type of variables](https://docs.julialang.org/en/v1/manual/performance-tips/#Avoid-changing-the-type-of-a-variable) and [always output the same type](https://docs.julialang.org/en/v1/manual/performance-tips/#Write-%22type-stable%22-functions)
 """
 
 # ╔═╡ fa483fea-bf9f-4764-8d4f-c6d33e3336fb
@@ -207,27 +223,21 @@ md"""
 
 Allocations and garbage collection are significant performance bottlenecks. Here are some ways to avoid them:
 
-- Prefer in-place operations that reuse available containers (they name usually [ends with `!`](https://docs.julialang.org/en/v1/manual/style-guide/#bang-convention))
+- Prefer in-place functions that reuse available containers (they name usually [ends with `!`](https://docs.julialang.org/en/v1/manual/style-guide/#bang-convention))
 - [Pre-allocate](https://docs.julialang.org/en/v1/manual/performance-tips/#Pre-allocating-outputs) output memory
 - Use [views instead of slices](https://docs.julialang.org/en/v1/manual/performance-tips/#man-performance-views) when you don't need copies: `view(A, :, 1)` instead of `A[:, 1]`
 - [Combine vectorized operations](https://docs.julialang.org/en/v1/manual/performance-tips/#More-dots:-Fuse-vectorized-operations)
 - Fix type inference bugs (they often lead to increased memory use)
 """
 
-# ╔═╡ fdf97758-26c1-4157-a5d1-af89578f6277
+# ╔═╡ 00e96665-ccbb-42c1-b5de-f626d57bb0ff
 md"""
-## Generic programming
-
-Multiple dispatch allows the right method to be chosen based on the type of every argument (not just the first one).
-This is what makes it possible for multiple packages to work together without knowing about each other... as long as they remain generic.
-In particular, it is not a good idea to overspecify input types: it usually doesn't improve performance, and can prevent unexpected uses of your code.
-
-This is explained in great detail in the blog post [Type-Dispatch Design: Post Object-Oriented Programming for Julia](https://www.stochasticlifestyle.com/type-dispatch-design-post-object-oriented-programming-julia/) (Chris Rackauckas).
+# Examples
 """
 
 # ╔═╡ 43bad028-9d16-426f-9cdb-a37b1ee1a623
 md"""
-# Example 1: matrix multiplication
+## Matrix multiplication
 
 Our goal here is to write a function that stores the product of two matrices $A \in \mathbb{R}^{m \times n}$ and $B \in \mathbb{R}^{n \times p}$ within the matrix $C \in \mathbb{R}^{m \times p}$, without using built-in linear algebra.
 Starting from a simple implementation, we will enhance it step by step until we are satisfied.
@@ -238,7 +248,7 @@ A, B = rand(100, 300), rand(300, 200);
 
 # ╔═╡ 7386749b-b2ab-48a7-a1d2-46e7f31e72e3
 md"""
-## Version 1
+**Version 1**
 
 Our first attempt aims at the simplest possible correct code. A programmer used to Python or R may try something like this.
 """
@@ -263,7 +273,7 @@ Is that a good running time? Can we do better? Hard to tell from the benchmark a
 """
 
 # ╔═╡ 62163e17-4265-4c97-95bb-29d608e80b07
-@plutoprofview matmul1(A, B)
+@profview matmul1(A, B)
 
 # ╔═╡ 9d8b7e25-c9c6-4aba-a33c-66fd18d804c0
 md"""
@@ -277,7 +287,7 @@ we create one copy of the row `A[i, :]`, one copy of the column `B[:, j]`, and a
 
 # ╔═╡ fe45168c-8cf1-435e-86fc-16cfffef3ec1
 md"""
-## Version 2
+**Version 2**
 
 Our second version remedies this problem by computing the dot product manually.
 """
@@ -302,7 +312,7 @@ The running time has decreased a lot, and so has the allocated memory.
 """
 
 # ╔═╡ fd4401cf-69e8-4444-92c3-478035301006
-@plutoprofview matmul2(A, B)
+@profview matmul2(A, B)
 
 # ╔═╡ 23053665-e058-43de-95d9-c688e3a80b0c
 md"""
@@ -311,7 +321,7 @@ This time we see that the main bottlenecks are `setindex!` and `getindex` (which
 
 # ╔═╡ 9a181530-02e7-47b0-9a86-c191baefac54
 md"""
-## Version 3
+**Version 3**
 
 Our third version uses some dark magic from [LoopVectorization.jl](https://github.com/JuliaSIMD/LoopVectorization.jl) to tell the compiler that operations can be vectorized (in a hardware sense, see the "Going further" section). We show this for the sake of completeness, but you should not use the `@turbo` macro unless you really know what you are doing (read the docs first!).
 """
@@ -332,7 +342,7 @@ end
 
 # ╔═╡ c7b551a0-8c2e-4785-b575-8d58e37c14ec
 md"""
-What a mind-blowing performance gain! This time we seem to have reached the performance of the built-in matrix product, so it is a good time to stop.
+What a mind-blowing performance gain! This time we seem to have reached the speed of the built-in matrix product, so it is a good time to stop.
 """
 
 # ╔═╡ 0d8af577-9275-490c-a689-65e7177c4d65
@@ -340,7 +350,7 @@ What a mind-blowing performance gain! This time we seem to have reached the perf
 
 # ╔═╡ 69e8bf4e-d98d-4804-b6bf-f299c3452565
 md"""
-# Example 2: point storage
+## Point storage
 
 Our goal here is to compare different ways to store a point in 2D space.
 We first define an abstract type (or interface).
@@ -359,25 +369,22 @@ mynorm(p::AbstractPoint) = sqrt(p.x^2 + p.y^2)
 
 # ╔═╡ 3f9a432e-bab3-4357-b834-a2aaebe9fe31
 md"""
-## Version 1
-"""
+**Version 1**
 
-# ╔═╡ 36f104eb-cef3-481e-8283-2ecaf16c058f
-md"""
-A `struct` written by a Julia beginner may look somewhat like this.
+A struct written by a Julia beginner may look somewhat like this.
 """
 
 # ╔═╡ 22b04135-f762-4331-8091-c8c3fa46655f
-struct StupidPoint <: AbstractPoint
+struct BeginnerPoint <: AbstractPoint
     x
     y
 end
 
 # ╔═╡ 3683d09a-7799-4bef-9d59-93f7fdb767a5
-p_stupid = StupidPoint(3., 5.)
+p_beginner = BeginnerPoint(3., 5.)
 
 # ╔═╡ 9757e3ab-ecff-49e4-8fd9-44633e49b95c
-@btime mynorm($p_stupid);
+@btime mynorm($p_beginner);
 
 # ╔═╡ 19e2af3a-c409-4c9e-afa9-8874750ae909
 md"""
@@ -385,7 +392,7 @@ Again, it is hard to judge performance in absolute terms, which is why we need p
 """
 
 # ╔═╡ 0ed838d3-32bc-4f40-82a7-066d50746f51
-@plutoprofview for i = 1:1000000; mynorm(p_stupid); end
+@profview for i = 1:1000000; mynorm(p_beginner); end
 
 # ╔═╡ 76842b03-b2f1-482f-9982-e8903e35cb25
 md"""
@@ -394,7 +401,7 @@ This time, the problem is not garbage collection, but runtime dispatch. Let's se
 
 # ╔═╡ 9063e65e-15ef-420a-94a4-28a0b1f5335b
 with_terminal() do
-	@code_warntype mynorm(p_stupid)
+	@code_warntype mynorm(p_beginner)
 end
 
 # ╔═╡ d35a4f16-b5d4-4827-9b45-dbe28c9c4ff0
@@ -409,11 +416,11 @@ More problematically, the line
 ```
 Body::Any
 ```
-states that the return type of the method is itself unknown. This means that type uncertainties may propagate if `mysqnorm(p_stupid)` is part of a larger code.
+states that the return type of the method is itself unknown. This means that type uncertainties may propagate if `mysqnorm(p_beginner)` is part of a larger code.
 """
 
 # ╔═╡ 848fefa1-824b-4076-8149-b3a8869c172a
- @report_opt mynorm(p_stupid)
+ @report_opt mynorm(p_beginner)
 
 # ╔═╡ 23c83abe-0904-4faf-b5c7-e6f04b30da71
 md"""
@@ -422,11 +429,8 @@ These problems are confirmed by the report of JET.jl, which detects several occu
 
 # ╔═╡ 0a1dd5c2-d164-4b88-aa5d-a73ede91c56c
 md"""
-## Version 2
-"""
+**Version 2**
 
-# ╔═╡ 11043a57-da51-4d84-a6e9-645650e88840
-md"""
 The natural way to fix our first version would be to add type annotations to both fields. Indeed, without annotations, each field is considered of type `Any`, which is really bad.
 """
 
@@ -444,7 +448,7 @@ p_clever = CleverPoint(3., 5.)
 
 # ╔═╡ 9f14261e-6bb9-4426-ae99-26fa35e531c1
 md"""
-As we can see, performance has greatly improved, because the method can now be fully inferred. 
+As we can see, performance has greatly improved, because the method can now be fully inferred.
 """
 
 # ╔═╡ 5970836a-5f14-446d-b05f-5beec9b05f8a
@@ -462,11 +466,8 @@ But what if our points have other coordinate types? Maybe we don't want to conve
 
 # ╔═╡ bd06e581-1757-43f2-bdef-0fe4c8f9d238
 md"""
-## Version 3
-"""
+**Version 3**
 
-# ╔═╡ 00bc35dc-202b-42bf-9c97-28faa0c42e73
-md"""
 The most generic way to encode a point with real coordinates is to use a [parametric type](https://docs.julialang.org/en/v1/manual/types/#Parametric-Types).
 """
 
@@ -492,15 +493,47 @@ ForwardDiff.gradient(a -> mynorm(GeniusPoint(a[1], a[2])), [3., 5.])
 
 # ╔═╡ efd5cf6a-68e3-44b3-9b6f-eae396901e4e
 md"""
-We can compare this behavior with that of `CleverPoint`, for which the `Float64` conversion causes problems.
+We can compare this behavior with that of `CleverPoint`, for which the `Float64` conversion throws an error.
 """
 
 # ╔═╡ 5c3eb0ba-dfef-4faa-87c5-009317b6faaa
-ForwardDiff.gradient(a -> mynorm(CleverPoint(a[1], a[2])), [3., 5.])
+try
+	ForwardDiff.gradient(a -> mynorm(CleverPoint(a[1], a[2])), [3., 5.])
+catch e
+	@error e
+end
 
 # ╔═╡ fe04e854-1393-42fc-b6d7-6a4b3848e0ef
 md"""
 # Going further
+"""
+
+# ╔═╡ 41268586-52ac-47f3-8f53-b52072a9ae46
+md"""
+## Other performance tutorials
+
+Here are some of my inspirations for this post:
+- [Performance tips](https://www.juliafordatascience.com/performance-tips/) (Josh Day)
+- [Optimizing Julia code](https://huijzer.xyz/posts/inference/) (Rik Huijzer)
+- [7 Julia gotchas and how to handle them](https://www.stochasticlifestyle.com/7-julia-gotchas-handle/) (Chris Rackauckas)
+"""
+
+# ╔═╡ 107a2cec-d4bf-494b-b0c7-0d7e038369f6
+md"""
+## Good practices
+
+Scientific programming needs fast code, but that's not all it needs. Adequate algorithms and sound coding habits are also very important. I recommend Antoine Levitt's notes on [Practical scientific computing](http://antoine.levitt.fr/calsci.pdf) as a starting point. 
+"""
+
+# ╔═╡ fdf97758-26c1-4157-a5d1-af89578f6277
+md"""
+## Generic programming
+
+Multiple dispatch allows the right method to be chosen based on the type of every argument (not just the first one).
+This is what makes it possible for multiple packages to work together without knowing about each other... as long as they remain generic.
+In particular, it is not a good idea to overspecify input types: it usually doesn't improve performance, and can prevent unexpected uses of your code.
+
+This is explained in great detail in the blog post [Type-Dispatch Design: Post Object-Oriented Programming for Julia](https://www.stochasticlifestyle.com/type-dispatch-design-post-object-oriented-programming-julia/) (Chris Rackauckas).
 """
 
 # ╔═╡ 6437292a-2922-4219-a5e9-b7c8e2db20c7
@@ -508,7 +541,7 @@ md"""
 ## Hardware considerations
 
 In order to optimize Julia code to the limit, it quickly becomes useful to know how a modern computer works.
-The following blog post is an absolute masterpiece on this aspect: [What scientists must know about hardware to write fast code](https://viralinstruction.com/posts/hardware/) (Jakob Nybo Nissen).
+The following blog post is an absolute masterpiece on this topic: [What scientists must know about hardware to write fast code](https://viralinstruction.com/posts/hardware/) (Jakob Nybo Nissen).
 """
 
 # ╔═╡ ada6d5f4-f5fc-4c5f-9724-d29f4bb2a06a
@@ -531,20 +564,17 @@ BenchmarkTools = "6e4b80f9-dd63-53aa-95a3-0cdb28fa8baf"
 ForwardDiff = "f6369f11-7733-5829-9624-2563aa707210"
 JET = "c3a54625-cd67-489e-a8e7-0a5a0ff4e31b"
 LoopVectorization = "bdcacae8-1622-11e9-2a5c-532679323890"
-PlutoProfile = "ee419aa8-929d-45cd-acf6-76bd043cd7ba"
 PlutoUI = "7f904dfe-b85e-4ff6-b463-dae2292396a8"
-Profile = "9abbd945-dff8-562f-b5e8-e1ebf5ef1b79"
 ProfileCanvas = "efd6af41-a80b-495e-886c-e51b0c7d77a3"
 ProgressLogging = "33c8b6b6-d38a-422a-b730-caa89a2f386c"
 
 [compat]
 BenchmarkTools = "~1.3.1"
-ForwardDiff = "~0.10.28"
-JET = "~0.5.14"
-LoopVectorization = "~0.12.108"
-PlutoProfile = "~0.3.0"
-PlutoUI = "~0.7.38"
-ProfileCanvas = "~0.1.0"
+ForwardDiff = "~0.10.30"
+JET = "~0.5.16"
+LoopVectorization = "~0.12.116"
+PlutoUI = "~0.7.39"
+ProfileCanvas = "~0.1.1"
 ProgressLogging = "~0.1.4"
 """
 
@@ -552,7 +582,7 @@ ProgressLogging = "~0.1.4"
 PLUTO_MANIFEST_TOML_CONTENTS = """
 # This file is machine-generated - editing it directly is not advised
 
-julia_version = "1.7.2"
+julia_version = "1.7.3"
 manifest_format = "2.0"
 
 [[deps.AbstractPlutoDingetjes]]
@@ -560,11 +590,6 @@ deps = ["Pkg"]
 git-tree-sha1 = "8eaf9f1b4921132a4cff3f36a1d9ba923b14a481"
 uuid = "6e696c72-6542-2067-7265-42206c756150"
 version = "1.1.4"
-
-[[deps.AbstractTrees]]
-git-tree-sha1 = "03e0550477d86222521d254b741d470ba17ea0b5"
-uuid = "1520ce14-60c1-5f80-bbc7-55ef81b5835c"
-version = "0.3.4"
 
 [[deps.Adapt]]
 deps = ["LinearAlgebra"]
@@ -576,10 +601,28 @@ version = "3.3.3"
 uuid = "0dad84c5-d112-42e6-8d28-ef12dabb789f"
 
 [[deps.ArrayInterface]]
-deps = ["Compat", "IfElse", "LinearAlgebra", "Requires", "SparseArrays", "Static"]
-git-tree-sha1 = "81f0cb60dc994ca17f68d9fb7c942a5ae70d9ee4"
+deps = ["ArrayInterfaceCore", "Compat", "IfElse", "LinearAlgebra", "Static"]
+git-tree-sha1 = "ec8a5e8528995f2cec48c53eb834ab0d58f8bd99"
 uuid = "4fba245c-0d91-5ea0-9b3e-6abc04ee57a9"
-version = "5.0.8"
+version = "6.0.14"
+
+[[deps.ArrayInterfaceCore]]
+deps = ["LinearAlgebra", "SparseArrays", "SuiteSparse"]
+git-tree-sha1 = "d0f59ebfe8d3ea2799fb3fb88742d69978e5843e"
+uuid = "30b0a656-2188-435a-8636-2ec0e6a096e2"
+version = "0.1.10"
+
+[[deps.ArrayInterfaceOffsetArrays]]
+deps = ["ArrayInterface", "OffsetArrays", "Static"]
+git-tree-sha1 = "3cbe45d8cc9cff51f302df1f87df64095423fd96"
+uuid = "015c0d05-e682-4f19-8f0a-679ce4c54826"
+version = "0.1.2"
+
+[[deps.ArrayInterfaceStaticArrays]]
+deps = ["Adapt", "ArrayInterface", "LinearAlgebra", "Static", "StaticArrays"]
+git-tree-sha1 = "d7dc30474e73173a990eca86af76cae8790fa9f2"
+uuid = "b0d46f97-bff5-4637-a19a-dd75974142cd"
+version = "0.1.2"
 
 [[deps.Artifacts]]
 uuid = "56f22d72-fd6d-98f1-02f0-08ddc0907c33"
@@ -601,15 +644,15 @@ version = "0.1.3"
 
 [[deps.CPUSummary]]
 deps = ["CpuId", "IfElse", "Static"]
-git-tree-sha1 = "baaac45b4462b3b0be16726f38b789bf330fcb7a"
+git-tree-sha1 = "0eaf4aedad5ccc3e39481db55d72973f856dc564"
 uuid = "2a0fbf3d-bb9c-48f3-b0a9-814d99fd7ab9"
-version = "0.1.21"
+version = "0.1.22"
 
 [[deps.ChainRulesCore]]
 deps = ["Compat", "LinearAlgebra", "SparseArrays"]
-git-tree-sha1 = "9950387274246d08af38f6eef8cb5480862a435f"
+git-tree-sha1 = "9489214b993cd42d17f44c36e359bf6a7c919abf"
 uuid = "d360d2e6-b24c-11e9-a2a3-2a2ae2dbcce4"
-version = "1.14.0"
+version = "1.15.0"
 
 [[deps.ChangesOfVariables]]
 deps = ["ChainRulesCore", "LinearAlgebra", "Test"]
@@ -619,9 +662,9 @@ version = "0.1.3"
 
 [[deps.CloseOpenIntervals]]
 deps = ["ArrayInterface", "Static"]
-git-tree-sha1 = "f576084239e6bdf801007c80e27e2cc2cd963fe0"
+git-tree-sha1 = "eb61d6b97041496058245821e3bb7eba2b2cf4db"
 uuid = "fb6a15b2-703c-40df-9091-08a04967cfa9"
-version = "0.1.6"
+version = "0.1.8"
 
 [[deps.CodeTracking]]
 deps = ["InteractiveUtils", "UUIDs"]
@@ -631,15 +674,9 @@ version = "1.0.9"
 
 [[deps.ColorTypes]]
 deps = ["FixedPointNumbers", "Random"]
-git-tree-sha1 = "63d1e802de0c4882c00aee5cb16f9dd4d6d7c59c"
+git-tree-sha1 = "0f4e115f6f34bbe43c19751c90a38b2f380637b9"
 uuid = "3da002f7-5984-5a60-b8a6-cbb66c0b333f"
-version = "0.11.1"
-
-[[deps.Colors]]
-deps = ["ColorTypes", "FixedPointNumbers", "Reexport"]
-git-tree-sha1 = "417b0ed7b8b838aa6ca0a87aadf1bb9eb111ce40"
-uuid = "5ae59095-9a9b-59fe-a467-6f913c188581"
-version = "0.12.8"
+version = "0.11.3"
 
 [[deps.CommonSubexpressions]]
 deps = ["MacroTools", "Test"]
@@ -648,20 +685,14 @@ uuid = "bbf7d656-a473-5ed7-a52c-81e309532950"
 version = "0.3.0"
 
 [[deps.Compat]]
-deps = ["Base64", "Dates", "DelimitedFiles", "Distributed", "InteractiveUtils", "LibGit2", "Libdl", "LinearAlgebra", "Markdown", "Mmap", "Pkg", "Printf", "REPL", "Random", "SHA", "Serialization", "SharedArrays", "Sockets", "SparseArrays", "Statistics", "Test", "UUIDs", "Unicode"]
-git-tree-sha1 = "b153278a25dd42c65abbf4e62344f9d22e59191b"
+deps = ["Dates", "LinearAlgebra", "UUIDs"]
+git-tree-sha1 = "924cdca592bc16f14d2f7006754a621735280b74"
 uuid = "34da2185-b29b-5c13-b0c7-acf172513d20"
-version = "3.43.0"
+version = "4.1.0"
 
 [[deps.CompilerSupportLibraries_jll]]
 deps = ["Artifacts", "Libdl"]
 uuid = "e66e0078-7015-5450-92f7-15fbd957f2ae"
-
-[[deps.Configurations]]
-deps = ["ExproniconLite", "OrderedCollections", "TOML"]
-git-tree-sha1 = "ab9b7c51e8acdd20c769bccde050b5615921c533"
-uuid = "5218b696-f38b-4ac9-8b61-a12ec717816d"
-version = "0.17.3"
 
 [[deps.CpuId]]
 deps = ["Markdown"]
@@ -669,23 +700,9 @@ git-tree-sha1 = "fcbb72b032692610bfbdb15018ac16a36cf2e406"
 uuid = "adafc99b-e345-5852-983c-f28acb93d879"
 version = "0.3.1"
 
-[[deps.DataAPI]]
-git-tree-sha1 = "fb5f5316dd3fd4c5e7c30a24d50643b73e37cd40"
-uuid = "9a962f9c-6df0-11e9-0e5d-c546b8b5ee8a"
-version = "1.10.0"
-
-[[deps.DataValueInterfaces]]
-git-tree-sha1 = "bfc1187b79289637fa0ef6d4436ebdfe6905cbd6"
-uuid = "e2d170a0-9d28-54be-80f0-106bbe20a464"
-version = "1.0.0"
-
 [[deps.Dates]]
 deps = ["Printf"]
 uuid = "ade2ca70-3891-5945-98fb-dc099432e06a"
-
-[[deps.DelimitedFiles]]
-deps = ["Mmap"]
-uuid = "8bb1440f-4735-579b-a4ab-409b98df4dab"
 
 [[deps.DiffResults]]
 deps = ["StaticArrays"]
@@ -710,19 +727,8 @@ uuid = "ffbed154-4ef7-542d-bbb7-c09d3a79fcae"
 version = "0.8.6"
 
 [[deps.Downloads]]
-deps = ["ArgTools", "LibCURL", "NetworkOptions"]
+deps = ["ArgTools", "FileWatching", "LibCURL", "NetworkOptions"]
 uuid = "f43a241f-c20a-4ad4-852c-f6b1247861c6"
-
-[[deps.ExproniconLite]]
-git-tree-sha1 = "8b08cc88844e4d01db5a2405a08e9178e19e479e"
-uuid = "55351af7-c7e9-48d6-89ff-24e801d99491"
-version = "0.6.13"
-
-[[deps.FileIO]]
-deps = ["Pkg", "Requires", "UUIDs"]
-git-tree-sha1 = "9267e5f50b0e12fdfd5a2455534345c4cf2c7f7a"
-uuid = "5789e2e9-d7fb-5bc7-8068-2c6fae9b9549"
-version = "1.14.0"
 
 [[deps.FileWatching]]
 uuid = "7b1f6079-737a-58dc-b8bc-7a2ca5c1b5ee"
@@ -733,47 +739,17 @@ git-tree-sha1 = "335bfdceacc84c5cdf16aadc768aa5ddfc5383cc"
 uuid = "53c48c17-4a7d-5ca2-90c5-79b7896eea93"
 version = "0.8.4"
 
-[[deps.FlameGraphs]]
-deps = ["AbstractTrees", "Colors", "FileIO", "FixedPointNumbers", "IndirectArrays", "LeftChildRightSiblingTrees", "Profile"]
-git-tree-sha1 = "d9eee53657f6a13ee51120337f98684c9c702264"
-uuid = "08572546-2f56-4bcf-ba4e-bab62c3a3f89"
-version = "0.2.10"
-
 [[deps.ForwardDiff]]
 deps = ["CommonSubexpressions", "DiffResults", "DiffRules", "LinearAlgebra", "LogExpFunctions", "NaNMath", "Preferences", "Printf", "Random", "SpecialFunctions", "StaticArrays"]
-git-tree-sha1 = "7a380de46b0a1db85c59ebbce5788412a39e4cb7"
+git-tree-sha1 = "2f18915445b248731ec5db4e4a17e451020bf21e"
 uuid = "f6369f11-7733-5829-9624-2563aa707210"
-version = "0.10.28"
-
-[[deps.FuzzyCompletions]]
-deps = ["REPL"]
-git-tree-sha1 = "efd6c064e15e92fcce436977c825d2117bf8ce76"
-uuid = "fb4132e2-a121-4a70-b8a1-d5b831dcdcc2"
-version = "0.5.0"
-
-[[deps.HTTP]]
-deps = ["Base64", "Dates", "IniFile", "Logging", "MbedTLS", "NetworkOptions", "Sockets", "URIs"]
-git-tree-sha1 = "0fa77022fe4b511826b39c894c90daf5fce3334a"
-uuid = "cd3eb016-35fb-5094-929b-558a96fad6f3"
-version = "0.9.17"
+version = "0.10.30"
 
 [[deps.HostCPUFeatures]]
 deps = ["BitTwiddlingConvenienceFunctions", "IfElse", "Libdl", "Static"]
 git-tree-sha1 = "18be5268cf415b5e27f34980ed25a7d34261aa83"
 uuid = "3e5b6fbb-0976-4d2c-9146-d79de83f2fb0"
 version = "0.1.7"
-
-[[deps.Hwloc]]
-deps = ["Hwloc_jll"]
-git-tree-sha1 = "92d99146066c5c6888d5a3abc871e6a214388b91"
-uuid = "0e44f5e4-bd66-52a0-8798-143a42290a1d"
-version = "2.0.0"
-
-[[deps.Hwloc_jll]]
-deps = ["Artifacts", "JLLWrappers", "Libdl", "Pkg"]
-git-tree-sha1 = "303d70c961317c4c20fafaf5dbe0e6d610c38542"
-uuid = "e33a78d0-f292-5ffc-b300-72abe9b543c8"
-version = "2.7.1+0"
 
 [[deps.Hyperscript]]
 deps = ["Test"]
@@ -798,41 +774,26 @@ git-tree-sha1 = "debdd00ffef04665ccbb3e150747a77560e8fad1"
 uuid = "615f187c-cbe4-4ef1-ba3b-2fcf58d6d173"
 version = "0.1.1"
 
-[[deps.IndirectArrays]]
-git-tree-sha1 = "012e604e1c7458645cb8b436f8fba789a51b257f"
-uuid = "9b13fd28-a010-5f03-acff-a1bbcff69959"
-version = "1.0.0"
-
-[[deps.IniFile]]
-git-tree-sha1 = "f550e6e32074c939295eb5ea6de31849ac2c9625"
-uuid = "83e8ac13-25f8-5344-8a64-a9f2b223428f"
-version = "0.5.1"
-
 [[deps.InteractiveUtils]]
 deps = ["Markdown"]
 uuid = "b77e0a4c-d291-57a0-90e8-8db25a27a240"
 
 [[deps.InverseFunctions]]
 deps = ["Test"]
-git-tree-sha1 = "336cc738f03e069ef2cac55a104eb823455dca75"
+git-tree-sha1 = "c6cf981474e7094ce044168d329274d797843467"
 uuid = "3587e190-3f89-42d0-90ee-14403ec27112"
-version = "0.1.4"
+version = "0.1.6"
 
 [[deps.IrrationalConstants]]
 git-tree-sha1 = "7fd44fd4ff43fc60815f8e764c0f352b83c49151"
 uuid = "92d709cd-6900-40b7-9082-c6be49f344b6"
 version = "0.1.1"
 
-[[deps.IteratorInterfaceExtensions]]
-git-tree-sha1 = "a3f24677c21f5bbe9d2a714f95dcd58337fb2856"
-uuid = "82899510-4779-5014-852e-03e436cf321d"
-version = "1.0.0"
-
 [[deps.JET]]
 deps = ["InteractiveUtils", "JuliaInterpreter", "LoweredCodeUtils", "MacroTools", "Pkg", "Revise", "Test"]
-git-tree-sha1 = "db7e3490a86714a183d5b11576f25340160783ff"
+git-tree-sha1 = "8e78b0c297cfa6cefd579f87232c89bd6ed7a081"
 uuid = "c3a54625-cd67-489e-a8e7-0a5a0ff4e31b"
-version = "0.5.14"
+version = "0.5.16"
 
 [[deps.JLLWrappers]]
 deps = ["Preferences"]
@@ -853,16 +814,10 @@ uuid = "aa1ae85d-cabe-5617-a682-6adf51b2e16a"
 version = "0.9.13"
 
 [[deps.LayoutPointers]]
-deps = ["ArrayInterface", "LinearAlgebra", "ManualMemory", "SIMDTypes", "Static"]
-git-tree-sha1 = "b651f573812d6c36c22c944dd66ef3ab2283dfa1"
+deps = ["ArrayInterface", "ArrayInterfaceOffsetArrays", "ArrayInterfaceStaticArrays", "LinearAlgebra", "ManualMemory", "SIMDTypes", "Static"]
+git-tree-sha1 = "a575de5a424a395217930fea6d0934ea853d0158"
 uuid = "10f19ff3-798f-405d-979b-55457f8fc047"
-version = "0.1.6"
-
-[[deps.LeftChildRightSiblingTrees]]
-deps = ["AbstractTrees"]
-git-tree-sha1 = "b864cb409e8e445688bc478ef87c0afe4f6d1f8d"
-uuid = "1d6d02ad-be62-4b6b-8a6d-2f90e265016e"
-version = "0.1.3"
+version = "0.1.9"
 
 [[deps.LibCURL]]
 deps = ["LibCURL_jll", "MozillaCACerts_jll"]
@@ -897,10 +852,10 @@ version = "0.3.15"
 uuid = "56ddb016-857b-54e1-b83d-db4d58db5568"
 
 [[deps.LoopVectorization]]
-deps = ["ArrayInterface", "CPUSummary", "ChainRulesCore", "CloseOpenIntervals", "DocStringExtensions", "ForwardDiff", "HostCPUFeatures", "IfElse", "LayoutPointers", "LinearAlgebra", "OffsetArrays", "PolyesterWeave", "SIMDDualNumbers", "SLEEFPirates", "SpecialFunctions", "Static", "ThreadingUtilities", "UnPack", "VectorizationBase"]
-git-tree-sha1 = "4acc35e95bf18de5e9562d27735bef0950f2ed74"
+deps = ["ArrayInterface", "ArrayInterfaceCore", "ArrayInterfaceOffsetArrays", "ArrayInterfaceStaticArrays", "CPUSummary", "ChainRulesCore", "CloseOpenIntervals", "DocStringExtensions", "ForwardDiff", "HostCPUFeatures", "IfElse", "LayoutPointers", "LinearAlgebra", "OffsetArrays", "PolyesterWeave", "SIMDDualNumbers", "SIMDTypes", "SLEEFPirates", "SpecialFunctions", "Static", "ThreadingUtilities", "UnPack", "VectorizationBase"]
+git-tree-sha1 = "b11116837200f222c00d2b14a594a98ab3c97a0d"
 uuid = "bdcacae8-1622-11e9-2a5c-532679323890"
-version = "0.12.108"
+version = "0.12.116"
 
 [[deps.LoweredCodeUtils]]
 deps = ["JuliaInterpreter"]
@@ -923,12 +878,6 @@ version = "0.1.8"
 deps = ["Base64"]
 uuid = "d6f4376e-aef5-505a-96c1-9c027394607a"
 
-[[deps.MbedTLS]]
-deps = ["Dates", "MbedTLS_jll", "Random", "Sockets"]
-git-tree-sha1 = "1c38e51c3d08ef2278062ebceade0e46cefc96fe"
-uuid = "739be429-bea8-5141-9913-cc70e7f3736d"
-version = "1.0.3"
-
 [[deps.MbedTLS_jll]]
 deps = ["Artifacts", "Libdl"]
 uuid = "c8ffd9c3-330d-5841-b78e-0817d7145fa1"
@@ -938,12 +887,6 @@ uuid = "a63ad114-7e13-5084-954f-fe012c677804"
 
 [[deps.MozillaCACerts_jll]]
 uuid = "14a3606d-f60d-562e-9121-12d972cd8159"
-
-[[deps.MsgPack]]
-deps = ["Serialization"]
-git-tree-sha1 = "a8cbf066b54d793b9a48c5daa5d586cf2b5bd43d"
-uuid = "99f44e22-a591-53d1-9472-aa23ef4bd671"
-version = "1.1.0"
 
 [[deps.NaNMath]]
 git-tree-sha1 = "737a5957f387b17e74d4ad2f440eb330b39a62c5"
@@ -955,9 +898,9 @@ uuid = "ca575930-c2e3-43a9-ace4-1e988b2c1908"
 
 [[deps.OffsetArrays]]
 deps = ["Adapt"]
-git-tree-sha1 = "aee446d0b3d5764e35289762f6a18e8ea041a592"
+git-tree-sha1 = "8694b777fe710111c65879fcc1184f8422b6d910"
 uuid = "6fe1bfb0-de20-5000-8ca7-80f57d26f881"
-version = "1.11.0"
+version = "1.12.3"
 
 [[deps.OpenBLAS_jll]]
 deps = ["Artifacts", "CompilerSupportLibraries_jll", "Libdl"]
@@ -988,23 +931,11 @@ version = "2.3.1"
 deps = ["Artifacts", "Dates", "Downloads", "LibGit2", "Libdl", "Logging", "Markdown", "Printf", "REPL", "Random", "SHA", "Serialization", "TOML", "Tar", "UUIDs", "p7zip_jll"]
 uuid = "44cfe95a-1eb2-52ea-b672-e2afdf69b78f"
 
-[[deps.Pluto]]
-deps = ["Base64", "Configurations", "Dates", "Distributed", "FileWatching", "FuzzyCompletions", "HTTP", "InteractiveUtils", "Logging", "Markdown", "MsgPack", "Pkg", "REPL", "RelocatableFolders", "Sockets", "Tables", "UUIDs"]
-git-tree-sha1 = "1302c9385c9e5b47f9872688015927f7929371cb"
-uuid = "c3e4b0f8-55cb-11ea-2926-15256bba5781"
-version = "0.18.4"
-
-[[deps.PlutoProfile]]
-deps = ["AbstractTrees", "FlameGraphs", "Pluto", "Profile", "ProfileCanvas"]
-git-tree-sha1 = "d8189132bb02e041f537f96d774de441ccb5af88"
-uuid = "ee419aa8-929d-45cd-acf6-76bd043cd7ba"
-version = "0.3.0"
-
 [[deps.PlutoUI]]
 deps = ["AbstractPlutoDingetjes", "Base64", "ColorTypes", "Dates", "Hyperscript", "HypertextLiteral", "IOCapture", "InteractiveUtils", "JSON", "Logging", "Markdown", "Random", "Reexport", "UUIDs"]
-git-tree-sha1 = "670e559e5c8e191ded66fa9ea89c97f10376bb4c"
+git-tree-sha1 = "8d1f54886b9037091edf146b517989fc4a09efec"
 uuid = "7f904dfe-b85e-4ff6-b463-dae2292396a8"
-version = "0.7.38"
+version = "0.7.39"
 
 [[deps.PolyesterWeave]]
 deps = ["BitTwiddlingConvenienceFunctions", "CPUSummary", "IfElse", "Static", "ThreadingUtilities"]
@@ -1027,10 +958,10 @@ deps = ["Printf"]
 uuid = "9abbd945-dff8-562f-b5e8-e1ebf5ef1b79"
 
 [[deps.ProfileCanvas]]
-deps = ["FlameGraphs", "JSON", "Pkg", "Profile", "REPL"]
-git-tree-sha1 = "41fd9086187b8643feda56b996eef7a3cc7f4699"
+deps = ["JSON", "Pkg", "Profile", "REPL"]
+git-tree-sha1 = "eb5b798f906389b255247a22c5eff8b554fbedca"
 uuid = "efd6af41-a80b-495e-886c-e51b0c7d77a3"
-version = "0.1.0"
+version = "0.1.1"
 
 [[deps.ProgressLogging]]
 deps = ["Logging", "SHA", "UUIDs"]
@@ -1051,12 +982,6 @@ git-tree-sha1 = "45e428421666073eab6f2da5c9d310d99bb12f9b"
 uuid = "189a3867-3050-52da-a836-e630ba90ab69"
 version = "1.2.2"
 
-[[deps.RelocatableFolders]]
-deps = ["SHA", "Scratch"]
-git-tree-sha1 = "307761d71804208c0c62abdbd0ea6822aa5bbefd"
-uuid = "05181044-ff0b-4ac5-8273-598c1e38db00"
-version = "0.2.0"
-
 [[deps.Requires]]
 deps = ["UUIDs"]
 git-tree-sha1 = "838a3a4188e2ded87a4f9f184b4b0d78a1e91cb7"
@@ -1074,9 +999,9 @@ uuid = "ea8e919c-243c-51af-8825-aaa63cd721ce"
 
 [[deps.SIMDDualNumbers]]
 deps = ["ForwardDiff", "IfElse", "SLEEFPirates", "VectorizationBase"]
-git-tree-sha1 = "62c2da6eb66de8bb88081d20528647140d4daa0e"
+git-tree-sha1 = "dd4195d308df24f33fb10dde7c22103ba88887fa"
 uuid = "3cdde19b-5bb0-4aaf-8931-af3e248e098b"
-version = "0.1.0"
+version = "0.1.1"
 
 [[deps.SIMDTypes]]
 git-tree-sha1 = "330289636fb8107c5f32088d2741e9fd7a061a5c"
@@ -1089,18 +1014,8 @@ git-tree-sha1 = "ac399b5b163b9140f9c310dfe9e9aaa225617ff6"
 uuid = "476501e8-09a2-5ece-8869-fb82de89a1fa"
 version = "0.6.32"
 
-[[deps.Scratch]]
-deps = ["Dates"]
-git-tree-sha1 = "0b4b7f1393cff97c33891da2a0bf69c6ed241fda"
-uuid = "6c6a2e73-6563-6170-7368-637461726353"
-version = "1.1.0"
-
 [[deps.Serialization]]
 uuid = "9e88b42a-f829-5b0c-bbe9-9e923198166b"
-
-[[deps.SharedArrays]]
-deps = ["Distributed", "Mmap", "Random", "Serialization"]
-uuid = "1a1011a3-84de-559e-8e89-a11a2f7dc383"
 
 [[deps.Sockets]]
 uuid = "6462fe0b-24de-5631-8697-dd941f90decc"
@@ -1111,41 +1026,33 @@ uuid = "2f01184e-e22b-5df5-ae63-d93ebab69eaf"
 
 [[deps.SpecialFunctions]]
 deps = ["ChainRulesCore", "IrrationalConstants", "LogExpFunctions", "OpenLibm_jll", "OpenSpecFun_jll"]
-git-tree-sha1 = "5ba658aeecaaf96923dce0da9e703bd1fe7666f9"
+git-tree-sha1 = "a9e798cae4867e3a41cae2dd9eb60c047f1212db"
 uuid = "276daf66-3868-5448-9aa4-cd146d93841b"
-version = "2.1.4"
+version = "2.1.6"
 
 [[deps.Static]]
 deps = ["IfElse"]
-git-tree-sha1 = "5309da1cdef03e95b73cd3251ac3a39f887da53e"
+git-tree-sha1 = "5d2c08cef80c7a3a8ba9ca023031a85c263012c5"
 uuid = "aedffcd0-7271-4cad-89d0-dc628f76c6d3"
-version = "0.6.4"
+version = "0.6.6"
 
 [[deps.StaticArrays]]
 deps = ["LinearAlgebra", "Random", "Statistics"]
-git-tree-sha1 = "cd56bf18ed715e8b09f06ef8c6b781e6cdc49911"
+git-tree-sha1 = "383a578bdf6e6721f480e749d503ebc8405a0b22"
 uuid = "90137ffa-7385-5640-81b9-e52037218182"
-version = "1.4.4"
+version = "1.4.6"
 
 [[deps.Statistics]]
 deps = ["LinearAlgebra", "SparseArrays"]
 uuid = "10745b16-79ce-11e8-11f9-7d13ad32a3b2"
 
+[[deps.SuiteSparse]]
+deps = ["Libdl", "LinearAlgebra", "Serialization", "SparseArrays"]
+uuid = "4607b0f0-06f3-5cda-b6b1-a6196a1729e9"
+
 [[deps.TOML]]
 deps = ["Dates"]
 uuid = "fa267f1f-6049-4f14-aa54-33bafae1ed76"
-
-[[deps.TableTraits]]
-deps = ["IteratorInterfaceExtensions"]
-git-tree-sha1 = "c06b2f539df1c6efa794486abfb6ed2022561a39"
-uuid = "3783bdb8-4a98-5b6b-af9a-565f29a5fe9c"
-version = "1.0.1"
-
-[[deps.Tables]]
-deps = ["DataAPI", "DataValueInterfaces", "IteratorInterfaceExtensions", "LinearAlgebra", "OrderedCollections", "TableTraits", "Test"]
-git-tree-sha1 = "5ce79ce186cc678bbb5c5681ca3379d1ddae11a1"
-uuid = "bd369af6-aec1-5ad0-b16a-f7cc5008161c"
-version = "1.7.0"
 
 [[deps.Tar]]
 deps = ["ArgTools", "SHA"]
@@ -1166,11 +1073,6 @@ git-tree-sha1 = "6bac775f2d42a611cdfcd1fb217ee719630c4175"
 uuid = "410a4b4d-49e4-4fbc-ab6d-cb71b17b3775"
 version = "0.1.6"
 
-[[deps.URIs]]
-git-tree-sha1 = "97bbe755a53fe859669cd907f2d96aee8d2c1355"
-uuid = "5c2747f8-b7ea-4ff2-ba2e-563bfd36b1d4"
-version = "1.3.0"
-
 [[deps.UUIDs]]
 deps = ["Random", "SHA"]
 uuid = "cf7118a7-6976-5b1a-9a39-7adc72f591a4"
@@ -1184,10 +1086,10 @@ version = "1.0.2"
 uuid = "4ec0a83e-493e-50e2-b9ac-8f72acf5a8f5"
 
 [[deps.VectorizationBase]]
-deps = ["ArrayInterface", "CPUSummary", "HostCPUFeatures", "Hwloc", "IfElse", "LayoutPointers", "Libdl", "LinearAlgebra", "SIMDTypes", "Static"]
-git-tree-sha1 = "ff34c2f1d80ccb4f359df43ed65d6f90cb70b323"
+deps = ["ArrayInterface", "CPUSummary", "HostCPUFeatures", "IfElse", "LayoutPointers", "Libdl", "LinearAlgebra", "SIMDTypes", "Static"]
+git-tree-sha1 = "7d3de169cd221392082a5abc7f363726e1a30628"
 uuid = "3d5dd08c-fd9d-11e8-17fa-ed2836048c2f"
-version = "0.21.31"
+version = "0.21.36"
 
 [[deps.Zlib_jll]]
 deps = ["Libdl"]
@@ -1207,7 +1109,15 @@ uuid = "3f19e933-33d8-53b3-aaab-bd5110c3b7a0"
 """
 
 # ╔═╡ Cell order:
-# ╠═f5231f65-da94-4ed3-af65-857edb42ee08
+# ╟─155a8c77-2837-44ee-9b7a-68d5a89a2fdc
+# ╟─c48f5b63-48b0-4bb6-997d-7d40745a46fa
+# ╠═86e4051d-ede6-4e1d-9676-98d92140cc78
+# ╠═27793eba-f876-4e92-849d-945989e39216
+# ╠═ac232fbf-827e-4363-9eac-04885334368a
+# ╠═144e4f59-c0d0-4f75-aa49-d05cf781d83e
+# ╠═6b3592a6-43d0-4ebd-a06d-d325dd66a829
+# ╠═06e6e4b8-31b2-4f9e-9da3-093a030021af
+# ╠═22d3e9db-f4ec-4810-b2d5-94bdbf8d52ac
 # ╠═5de2a556-f3af-4a64-a5c6-32d30f758be3
 # ╠═1ac5ba38-0eef-41bb-8f9c-3bbf057cae21
 # ╟─e1852c8d-4028-409e-8e1a-8253bbd6e6a5
@@ -1221,18 +1131,17 @@ uuid = "3f19e933-33d8-53b3-aaab-bd5110c3b7a0"
 # ╠═a28f7911-3dbb-45fb-a82d-2834d3c8502c
 # ╠═4da8a7ca-3cea-4629-a66d-44f3b907af09
 # ╟─c0a7c1fe-457f-4e52-b0ea-2821e40817ea
-# ╠═834f6172-15bc-4e7d-ae22-e18ef2e8e22b
-# ╠═72a290ea-ddf7-462d-8b37-bf8ab777a449
+# ╠═4e73e893-31c5-4c34-82da-ddabaa7316a4
+# ╟─ddbe8924-756a-46a8-9af1-6df0a21e9057
 # ╟─94c78148-c651-4a59-9e62-5c7e9576d1e8
 # ╠═c44f3dc9-ff19-4ba4-9388-73cfaf23f8e8
 # ╟─a7de0ec9-6b01-4b42-8cce-bb2295da779f
 # ╟─9ca598c1-dae8-40b9-a18d-c74f30524b35
 # ╟─0fb6ed33-601c-4392-b7d9-32230c979d39
 # ╟─a6e9da76-1ff0-4b54-9b55-4856ca32b251
-# ╟─b061acb9-16f1-4b2b-8a07-f94d4282018f
 # ╟─d3c1a86c-8c8f-4ad6-ac3c-2ba0f838d139
 # ╟─fa483fea-bf9f-4764-8d4f-c6d33e3336fb
-# ╟─fdf97758-26c1-4157-a5d1-af89578f6277
+# ╟─00e96665-ccbb-42c1-b5de-f626d57bb0ff
 # ╟─43bad028-9d16-426f-9cdb-a37b1ee1a623
 # ╠═857509a7-f07a-4bf0-9383-207984b95faa
 # ╟─7386749b-b2ab-48a7-a1d2-46e7f31e72e3
@@ -1247,7 +1156,7 @@ uuid = "3f19e933-33d8-53b3-aaab-bd5110c3b7a0"
 # ╟─638de554-1bec-453d-9e30-796247aaa4cc
 # ╠═fd4401cf-69e8-4444-92c3-478035301006
 # ╟─23053665-e058-43de-95d9-c688e3a80b0c
-# ╠═9a181530-02e7-47b0-9a86-c191baefac54
+# ╟─9a181530-02e7-47b0-9a86-c191baefac54
 # ╠═c171555a-0166-476e-8ec6-1860745d84f2
 # ╠═610f6d6f-9d37-4f3d-be78-ab9847162f4d
 # ╟─c7b551a0-8c2e-4785-b575-8d58e37c14ec
@@ -1257,7 +1166,6 @@ uuid = "3f19e933-33d8-53b3-aaab-bd5110c3b7a0"
 # ╟─253a9547-a2d4-4d17-b3b8-22194233bed3
 # ╠═8178e06d-0632-4600-803a-09ed96816f61
 # ╟─3f9a432e-bab3-4357-b834-a2aaebe9fe31
-# ╟─36f104eb-cef3-481e-8283-2ecaf16c058f
 # ╠═22b04135-f762-4331-8091-c8c3fa46655f
 # ╠═3683d09a-7799-4bef-9d59-93f7fdb767a5
 # ╠═9757e3ab-ecff-49e4-8fd9-44633e49b95c
@@ -1269,7 +1177,6 @@ uuid = "3f19e933-33d8-53b3-aaab-bd5110c3b7a0"
 # ╠═848fefa1-824b-4076-8149-b3a8869c172a
 # ╟─23c83abe-0904-4faf-b5c7-e6f04b30da71
 # ╟─0a1dd5c2-d164-4b88-aa5d-a73ede91c56c
-# ╟─11043a57-da51-4d84-a6e9-645650e88840
 # ╠═40d777cc-7cf0-44f7-b179-fe3abbf4e030
 # ╠═8b1b31e8-1f7c-427c-b69b-9fa5d4f654cc
 # ╠═a13f3093-a2a7-441f-acaf-c4b9b099024c
@@ -1278,7 +1185,6 @@ uuid = "3f19e933-33d8-53b3-aaab-bd5110c3b7a0"
 # ╠═7d487376-9651-45c6-bc8a-21117af8e745
 # ╟─5b5b3949-2a82-415a-8e2d-6b497c257a3f
 # ╟─bd06e581-1757-43f2-bdef-0fe4c8f9d238
-# ╟─00bc35dc-202b-42bf-9c97-28faa0c42e73
 # ╠═bb734c3b-d981-4473-aa04-9262206ee746
 # ╠═1756c3bc-8662-4f76-bc6a-1b7448b36913
 # ╠═008dcb2f-d32b-425d-bc7c-55b512d53b8a
@@ -1287,6 +1193,9 @@ uuid = "3f19e933-33d8-53b3-aaab-bd5110c3b7a0"
 # ╟─efd5cf6a-68e3-44b3-9b6f-eae396901e4e
 # ╠═5c3eb0ba-dfef-4faa-87c5-009317b6faaa
 # ╟─fe04e854-1393-42fc-b6d7-6a4b3848e0ef
+# ╟─41268586-52ac-47f3-8f53-b52072a9ae46
+# ╟─107a2cec-d4bf-494b-b0c7-0d7e038369f6
+# ╟─fdf97758-26c1-4157-a5d1-af89578f6277
 # ╟─6437292a-2922-4219-a5e9-b7c8e2db20c7
 # ╟─ada6d5f4-f5fc-4c5f-9724-d29f4bb2a06a
 # ╟─00000000-0000-0000-0000-000000000001
