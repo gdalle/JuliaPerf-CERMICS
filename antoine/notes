@@ -69,6 +69,7 @@ rowcol.jl
 matmul.jl
 
 roofline model
+https://www.spiral.net/software/roofline.html
 
 comment optimiser matmul : vectorisation + cache
 https://github.com/JuliaLinearAlgebra/Octavian.jl
